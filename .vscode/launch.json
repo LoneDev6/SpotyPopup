@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:SpotifydUI}",
+            "name": "Debug SpotifydUI",
+            "target": "SpotifydUI",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug SpotifydUI"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:SpotifydUI}",
+            "name": "Release SpotifydUI",
+            "target": "SpotifydUI",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release SpotifydUI"
+        }
+    ]
+}
