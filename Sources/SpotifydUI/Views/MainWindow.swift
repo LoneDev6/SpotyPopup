@@ -7,71 +7,93 @@ struct MainWindow: View {
     @State private var showQueue = false
 
     var body: some View {
-        GeometryReader { geometry in
-            HStack(spacing: 0) {
-                // Sidebar - Playlists
-                PlaylistSidebar(
-                    playlists: api.playlists,
-                    selectedPlaylist: $selectedPlaylist,
-                    onSelectPlaylist: { playlist in
-                        selectedPlaylist = playlist
-                        Task {
-                            await api.fetchPlaylistTracks(playlistId: playlist.id)
+        VStack(spacing: 0) {
+            ZStack {
+                HStack(spacing: 0) {
+                    // Sidebar - Playlists
+                    PlaylistSidebar(
+                        playlists: api.playlists,
+                        selectedPlaylist: $selectedPlaylist,
+                        onSelectPlaylist: { playlist in
+                            selectedPlaylist = playlist
+                            // Clear current tracks immediately
+                            api.currentPlaylistTracks = []
+                            Task {
+                                await api.fetchPlaylistTracks(playlistId: playlist.id)
+                            }
                         }
+                    )
+                    .frame(width: 250)
+
+                    Divider()
+
+                    // Main content - Tracks
+                    if showQueue {
+                        QueueView(
+                            queue: api.queue,
+                            currentTrack: api.currentPlayback?.item,
+                            onClose: { showQueue = false }
+                        )
+                    } else {
+                        TrackListView(
+                            tracks: api.currentPlaylistTracks,
+                            playlistName: selectedPlaylist?.name ?? "Select a playlist",
+                            playlistId: selectedPlaylist?.id,
+                            isShuffleOn: api.isShuffleOn,
+                            tracksError: api.tracksError,
+                            onPlay: { track, index in
+                                Task {
+                                    if let playlist = selectedPlaylist, !playlist.isLikedSongs {
+                                        // Play from playlist context at this position
+                                        await api.playTrack(
+                                            uri: "spotify:track:\(track.id)",
+                                            contextUri: "spotify:playlist:\(playlist.id)",
+                                            offset: index
+                                        )
+                                    } else {
+                                        // Liked songs - play single track
+                                        await api.playTrack(uri: "spotify:track:\(track.id)")
+                                    }
+                                }
+                            },
+                            onAddToQueue: { track in
+                                Task {
+                                    await api.addToQueue(uri: "spotify:track:\(track.id)")
+                                }
+                            },
+                            onLoadMore: {
+                                Task {
+                                    await api.loadMoreTracks()
+                                }
+                            },
+                            onToggleShuffle: {
+                                Task {
+                                    await api.toggleShuffle()
+                                }
+                            }
+                        )
                     }
-                )
-                .frame(width: 250)
-
-                Divider()
-
-                // Main content - Tracks
-                if showQueue {
-                    QueueView(
-                        queue: api.queue,
-                        currentTrack: api.currentPlayback?.item,
-                        onClose: { showQueue = false },
-                        onPlay: { track in
-                            Task {
-                                await api.playTrack(uri: "spotify:track:\(track.id)")
-                            }
-                        }
-                    )
-                } else {
-                    TrackListView(
-                        tracks: api.currentPlaylistTracks,
-                        playlistName: selectedPlaylist?.name ?? "Select a playlist",
-                        onPlay: { track in
-                            Task {
-                                await api.playTrack(uri: "spotify:track:\(track.id)")
-                            }
-                        },
-                        onAddToQueue: { track in
-                            Task {
-                                await api.addToQueue(uri: "spotify:track:\(track.id)")
-                            }
-                        }
-                    )
                 }
-            }
 
-            // Bottom player bar
-            VStack(spacing: 0) {
-                Spacer()
-                Divider()
-                PlayerBar(
-                    playback: api.currentPlayback,
-                    onPlay: { Task { await api.play() } },
-                    onPause: { Task { await api.pause() } },
-                    onNext: { Task { await api.nextTrack() } },
-                    onPrevious: { Task { await api.previousTrack() } },
-                    onToggleQueue: {
-                        showQueue.toggle()
-                        if showQueue {
-                            Task { await api.fetchQueue() }
+                // Bottom player bar overlay
+                VStack {
+                    Spacer()
+                    Divider()
+                    PlayerBar(
+                        playback: api.currentPlayback,
+                        onPlay: { Task { await api.play() } },
+                        onPause: { Task { await api.pause() } },
+                        onNext: { Task { await api.nextTrack() } },
+                        onPrevious: { Task { await api.previousTrack() } },
+                        onToggleQueue: {
+                            showQueue.toggle()
+                            if showQueue {
+                                Task { await api.fetchQueue() }
+                            }
                         }
-                    }
-                )
-                .frame(height: 90)
+                    )
+                    .frame(height: 90)
+                }
             }
         }
         .frame(minWidth: 900, minHeight: 600)

@@ -7,25 +7,37 @@ struct PlaylistSidebar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Your Playlists")
+            Text("Your Playlists (\(playlists.count))")
                 .font(.headline)
                 .padding(.horizontal, 16)
                 .padding(.top, 16)
                 .padding(.bottom, 8)
 
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 4) {
-                    ForEach(playlists) { playlist in
-                        PlaylistRow(
-                            playlist: playlist,
-                            isSelected: selectedPlaylist?.id == playlist.id
-                        )
-                        .onTapGesture {
-                            onSelectPlaylist(playlist)
+            if playlists.isEmpty {
+                VStack {
+                    Spacer()
+                    ProgressView()
+                        .padding()
+                    Text("Loading playlists...")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                }
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 4) {
+                        ForEach(playlists) { playlist in
+                            PlaylistRow(
+                                playlist: playlist,
+                                isSelected: selectedPlaylist?.id == playlist.id
+                            )
+                            .onTapGesture {
+                                onSelectPlaylist(playlist)
+                            }
                         }
                     }
+                    .padding(.horizontal, 8)
                 }
-                .padding(.horizontal, 8)
             }
         }
         .background(Color(NSColor.controlBackgroundColor))
@@ -38,7 +50,22 @@ struct PlaylistRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            if let imageURL = playlist.imageURL, let url = URL(string: imageURL) {
+            if playlist.isLikedSongs {
+                // Special icon for Liked Songs
+                ZStack {
+                    LinearGradient(
+                        colors: [Color.purple, Color.blue],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    .frame(width: 48, height: 48)
+                    .cornerRadius(4)
+
+                    Image(systemName: "heart.fill")
+                        .font(.system(size: 24))
+                        .foregroundColor(.white)
+                }
+            } else if let imageURL = playlist.imageURL, let url = URL(string: imageURL) {
                 AsyncImage(url: url) { image in
                     image
                         .resizable()

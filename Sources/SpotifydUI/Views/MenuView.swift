@@ -35,6 +35,16 @@ struct MenuView: View {
 
             Spacer()
 
+            Button(action: {
+                auth.logout()
+            }) {
+                Image(systemName: "arrow.right.square")
+                    .font(.system(size: 16))
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Logout")
+
             Button(action: onClose) {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 16))

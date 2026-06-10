@@ -4,7 +4,6 @@ struct QueueView: View {
     let queue: [Track]
     let currentTrack: Track?
     let onClose: () -> Void
-    let onPlay: (Track) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -34,15 +33,16 @@ struct QueueView: View {
                     .padding(.horizontal, 20)
                     .padding(.bottom, 8)
 
-                QueueTrackRow(track: current, isPlaying: true, onPlay: {})
+                QueueTrackRow(track: current, isPlaying: true)
                     .padding(.bottom, 16)
 
                 if !queue.isEmpty {
-                    Text("Next in Queue")
+                    Text("Next in Queue (\(queue.count) tracks)")
                         .font(.caption)
                         .fontWeight(.semibold)
                         .foregroundColor(.secondary)
                         .padding(.horizontal, 20)
+                        .padding(.top, 4)
                         .padding(.bottom, 8)
                 }
             }
@@ -50,11 +50,7 @@ struct QueueView: View {
             ScrollView {
                 LazyVStack(spacing: 4) {
                     ForEach(queue) { track in
-                        QueueTrackRow(
-                            track: track,
-                            isPlaying: false,
-                            onPlay: { onPlay(track) }
-                        )
+                        QueueTrackRow(track: track, isPlaying: false)
                     }
                 }
             }
@@ -80,12 +76,10 @@ struct QueueView: View {
 struct QueueTrackRow: View {
     let track: Track
     let isPlaying: Bool
-    let onPlay: () -> Void
-
-    @State private var isHovering = false
 
     var body: some View {
         HStack(spacing: 12) {
+            // Album art
             if let artURL = track.albumArtURL, let url = URL(string: artURL) {
                 AsyncImage(url: url) { image in
                     image
@@ -120,20 +114,13 @@ struct QueueTrackRow: View {
 
             Spacer()
 
-            if isHovering && !isPlaying {
-                Button(action: onPlay) {
-                    Image(systemName: "play.circle.fill")
-                        .font(.system(size: 24))
-                        .foregroundColor(.accentColor)
-                }
-                .buttonStyle(.plain)
-            }
+            Text(track.durationFormatted)
+                .font(.system(size: 13))
+                .foregroundColor(.secondary)
+                .frame(width: 50, alignment: .trailing)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 8)
-        .background(isPlaying ? Color.accentColor.opacity(0.1) : (isHovering ? Color.gray.opacity(0.1) : Color.clear))
-        .onHover { hovering in
-            isHovering = hovering
-        }
+        .background(isPlaying ? Color.accentColor.opacity(0.1) : Color.clear)
     }
 }

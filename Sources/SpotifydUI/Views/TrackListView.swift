@@ -3,29 +3,83 @@ import SwiftUI
 struct TrackListView: View {
     let tracks: [Track]
     let playlistName: String
-    let onPlay: (Track) -> Void
+    let playlistId: String?
+    let isShuffleOn: Bool
+    let tracksError: String?
+    let onPlay: (Track, Int) -> Void
     let onAddToQueue: (Track) -> Void
+    let onLoadMore: () -> Void
+    let onToggleShuffle: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(playlistName)
-                .font(.title2)
-                .fontWeight(.bold)
-                .padding(.horizontal, 20)
-                .padding(.top, 20)
-                .padding(.bottom, 12)
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(playlistName)
+                        .font(.title2)
+                        .fontWeight(.bold)
 
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
-                        TrackRow(
-                            track: track,
-                            index: index + 1,
-                            onPlay: { onPlay(track) },
-                            onAddToQueue: { onAddToQueue(track) }
-                        )
-                        Divider()
-                            .padding(.leading, 60)
+                    Text("Tracks loaded: \(tracks.count)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                Button(action: onToggleShuffle) {
+                    Image(systemName: isShuffleOn ? "shuffle.circle.fill" : "shuffle")
+                        .font(.system(size: 24))
+                        .foregroundColor(isShuffleOn ? .accentColor : .secondary)
+                }
+                .buttonStyle(.plain)
+                .help(isShuffleOn ? "Shuffle on" : "Shuffle off")
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            .padding(.bottom, 12)
+
+            if let error = tracksError {
+                VStack(spacing: 12) {
+                    Spacer()
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 48))
+                        .foregroundColor(.orange)
+                    Text("Error loading tracks")
+                        .font(.headline)
+                    Text(error)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 40)
+                    Spacer()
+                }
+            } else if tracks.isEmpty {
+                VStack(spacing: 12) {
+                    Spacer()
+                    ProgressView()
+                    Text("Loading tracks...")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                }
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
+                            TrackRow(
+                                track: track,
+                                index: index + 1,
+                                onPlay: { onPlay(track, index) },
+                                onAddToQueue: { onAddToQueue(track) }
+                            )
+                            .onAppear {
+                                if index == tracks.count - 10 {
+                                    onLoadMore()
+                                }
+                            }
+                            Divider()
+                                .padding(.leading, 60)
+                        }
                     }
                 }
             }
@@ -61,19 +115,32 @@ struct TrackRow: View {
             }
             .frame(width: 40)
 
-            // Album art
-            if let artURL = track.albumArtURL, let url = URL(string: artURL) {
-                AsyncImage(url: url) { image in
-                    image
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                } placeholder: {
-                    Rectangle()
-                        .fill(Color.gray.opacity(0.3))
+            // Album art with overlay play button
+            ZStack {
+                if let artURL = track.albumArtURL, let url = URL(string: artURL) {
+                    AsyncImage(url: url) { image in
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    } placeholder: {
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.3))
+                    }
+                    .frame(width: 40, height: 40)
+                    .cornerRadius(4)
                 }
-                .frame(width: 40, height: 40)
-                .cornerRadius(4)
+
+                if isHovering {
+                    Button(action: onPlay) {
+                        Image(systemName: "play.circle.fill")
+                            .font(.system(size: 20))
+                            .foregroundColor(.white)
+                            .shadow(color: .black.opacity(0.3), radius: 2)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
+            .frame(width: 40, height: 40)
 
             // Track info
             VStack(alignment: .leading, spacing: 2) {
@@ -117,8 +184,12 @@ struct TrackRow: View {
         .padding(.horizontal, 20)
         .padding(.vertical, 8)
         .background(isHovering ? Color.gray.opacity(0.1) : Color.clear)
+        .contentShape(Rectangle())
         .onHover { hovering in
             isHovering = hovering
+        }
+        .onTapGesture(count: 2) {
+            onPlay()
         }
     }
 }

@@ -8,10 +8,12 @@ class SpotifyAuth: ObservableObject {
 
     private let clientID = "65391d22d97c42f29120bd1614d06421"
     private let redirectURI = "spotifydui://callback"
-    private let scope = "user-read-playback-state user-modify-playback-state playlist-read-private playlist-read-collaborative"
+    private let scope = "user-read-playback-state user-modify-playback-state playlist-read-private playlist-read-collaborative user-library-read playlist-modify-public playlist-modify-private"
 
     private var codeVerifier: String?
     private var codeChallenge: String?
+    private var refreshToken: String?
+    private var tokenExpiresAt: Date?
 
     func authenticate() {
         generatePKCECodes()
@@ -97,10 +99,15 @@ class SpotifyAuth: ObservableObject {
 
             if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 if let token = json["access_token"] as? String {
+                    let refresh = json["refresh_token"] as? String
+                    let expiresIn = json["expires_in"] as? Int ?? 3600
+
                     DispatchQueue.main.async {
                         self?.accessToken = token
+                        self?.refreshToken = refresh
+                        self?.tokenExpiresAt = Date().addingTimeInterval(TimeInterval(expiresIn))
                         self?.isAuthenticated = true
-                        self?.saveToken(token)
+                        self?.saveTokens(accessToken: token, refreshToken: refresh, expiresAt: self?.tokenExpiresAt)
                     }
                 } else {
                     print("Token exchange failed: \(json)")
@@ -109,15 +116,84 @@ class SpotifyAuth: ObservableObject {
         }.resume()
     }
 
-    private func saveToken(_ token: String) {
-        UserDefaults.standard.set(token, forKey: "spotify_access_token")
+    private func saveTokens(accessToken: String, refreshToken: String?, expiresAt: Date?) {
+        UserDefaults.standard.set(accessToken, forKey: "spotify_access_token")
+        if let refresh = refreshToken {
+            UserDefaults.standard.set(refresh, forKey: "spotify_refresh_token")
+        }
+        if let expires = expiresAt {
+            UserDefaults.standard.set(expires, forKey: "spotify_token_expires_at")
+        }
     }
 
     func loadToken() {
         if let token = UserDefaults.standard.string(forKey: "spotify_access_token") {
             accessToken = token
+            refreshToken = UserDefaults.standard.string(forKey: "spotify_refresh_token")
+            tokenExpiresAt = UserDefaults.standard.object(forKey: "spotify_token_expires_at") as? Date
             isAuthenticated = true
+
+            // Check if token is expired or about to expire (within 5 minutes)
+            if let expiresAt = tokenExpiresAt, Date().addingTimeInterval(300) > expiresAt {
+                Task {
+                    await refreshAccessToken()
+                }
+            }
         }
+    }
+
+    func refreshAccessToken() async {
+        guard let refresh = refreshToken else {
+            print("No refresh token available")
+            return
+        }
+
+        var request = URLRequest(url: URL(string: "https://accounts.spotify.com/api/token")!)
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+
+        let bodyParams = [
+            "grant_type": "refresh_token",
+            "refresh_token": refresh,
+            "client_id": clientID
+        ]
+
+        request.httpBody = bodyParams
+            .map { "\($0.key)=\($0.value)" }
+            .joined(separator: "&")
+            .data(using: .utf8)
+
+        do {
+            let (data, _) = try await URLSession.shared.data(for: request)
+
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let token = json["access_token"] as? String {
+                let expiresIn = json["expires_in"] as? Int ?? 3600
+
+                await MainActor.run {
+                    self.accessToken = token
+                    self.tokenExpiresAt = Date().addingTimeInterval(TimeInterval(expiresIn))
+                    self.saveTokens(accessToken: token, refreshToken: refresh, expiresAt: self.tokenExpiresAt)
+                }
+            } else {
+                print("Token refresh failed, need to re-authenticate")
+                await MainActor.run {
+                    self.logout()
+                }
+            }
+        } catch {
+            print("Token refresh error: \(error)")
+        }
+    }
+
+    func logout() {
+        UserDefaults.standard.removeObject(forKey: "spotify_access_token")
+        UserDefaults.standard.removeObject(forKey: "spotify_refresh_token")
+        UserDefaults.standard.removeObject(forKey: "spotify_token_expires_at")
+        accessToken = nil
+        refreshToken = nil
+        tokenExpiresAt = nil
+        isAuthenticated = false
     }
 }
 

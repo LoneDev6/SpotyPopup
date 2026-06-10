@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+echo "🛑 Killing existing SpotifydUI processes..."
+pkill -f SpotifydUI || true
+
 echo "🔨 Building SpotifydUI..."
 
 # Build the executable
@@ -54,4 +57,5 @@ EOF
 
 echo "✅ App bundle created: $APP_NAME"
 echo ""
-echo "To run: open $APP_NAME"
+echo "🚀 Starting SpotifydUI..."
+open "$APP_NAME"

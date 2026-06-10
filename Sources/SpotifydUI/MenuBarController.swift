@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-class MenuBarController: NSObject {
+class MenuBarController: NSObject, NSWindowDelegate {
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
     private let api = SpotifyAPI()
@@ -13,6 +13,11 @@ class MenuBarController: NSObject {
         super.init()
         setupMenuBar()
         setupPopover()
+        setupMediaKeys()
+
+        // Link auth and API
+        api.setAuthHandler(auth)
+
         auth.loadToken()
 
         if let token = auth.accessToken {
@@ -74,7 +79,8 @@ class MenuBarController: NSObject {
 
     private func startPolling() {
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+        // Poll every 10 seconds to avoid rate limiting
+        timer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
             Task {
                 await self?.api.fetchCurrentPlayback()
             }
@@ -101,11 +107,56 @@ class MenuBarController: NSObject {
         window.setContentSize(NSSize(width: 1000, height: 700))
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.center()
+        window.delegate = self
         window.makeKeyAndOrderFront(nil)
 
         NSApp.activate(ignoringOtherApps: true)
 
         mainWindow = window
+    }
+
+    // MARK: - NSWindowDelegate
+
+    func windowWillClose(_ notification: Notification) {
+        mainWindow = nil
+    }
+
+    private func setupMediaKeys() {
+        NSEvent.addLocalMonitorForEvents(matching: .systemDefined) { [weak self] event in
+            guard event.subtype.rawValue == 8 else { return event }
+
+            let keyCode = (event.data1 & 0xFFFF0000) >> 16
+            let keyFlags = event.data1 & 0x0000FFFF
+            let keyPressed = ((keyFlags & 0xFF00) >> 8) == 0xA
+
+            if keyPressed {
+                switch keyCode {
+                case 16: // Play/Pause
+                    Task { [weak self] in
+                        if self?.api.currentPlayback?.isPlaying == true {
+                            await self?.api.pause()
+                        } else {
+                            await self?.api.play()
+                        }
+                    }
+                    return nil
+                case 17: // Next
+                    Task { [weak self] in
+                        await self?.api.nextTrack()
+                    }
+                    return nil
+                case 18: // Previous
+                    Task { [weak self] in
+                        await self?.api.previousTrack()
+                    }
+                    return nil
+                default:
+                    break
+                }
+            }
+
+            return event
+        }
     }
 }
 
