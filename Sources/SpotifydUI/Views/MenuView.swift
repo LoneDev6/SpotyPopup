@@ -3,9 +3,15 @@ import SwiftUI
 struct MenuView: View {
     @ObservedObject var api: SpotifyAPI
     @ObservedObject var auth: SpotifyAuth
+    var onOpenMainWindow: () -> Void
+    var onClose: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
+            if auth.isAuthenticated {
+                headerBar
+            }
+
             if !auth.isAuthenticated {
                 loginView
             } else if let playback = api.currentPlayback, let track = playback.item {
@@ -15,6 +21,31 @@ struct MenuView: View {
             }
         }
         .frame(width: 280)
+    }
+
+    private var headerBar: some View {
+        HStack {
+            Button(action: onOpenMainWindow) {
+                Image(systemName: "music.note.house.fill")
+                    .font(.system(size: 16))
+                    .foregroundColor(.primary)
+            }
+            .buttonStyle(.plain)
+            .help("Open main window")
+
+            Spacer()
+
+            Button(action: onClose) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 16))
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Close")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color(NSColor.controlBackgroundColor))
     }
 
     private var loginView: some View {
@@ -102,13 +133,6 @@ struct MenuView: View {
             }
             .padding(.vertical, 8)
 
-            Divider()
-
-            Button("Quit") {
-                NSApplication.shared.terminate(nil)
-            }
-            .buttonStyle(.bordered)
-            .padding(.bottom, 8)
         }
         .padding()
     }
@@ -132,11 +156,6 @@ struct MenuView: View {
                 }
             }
             .buttonStyle(.borderedProminent)
-
-            Button("Quit") {
-                NSApplication.shared.terminate(nil)
-            }
-            .buttonStyle(.bordered)
         }
         .padding()
     }

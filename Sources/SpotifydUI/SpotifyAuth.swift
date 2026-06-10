@@ -8,7 +8,7 @@ class SpotifyAuth: ObservableObject {
 
     private let clientID = "65391d22d97c42f29120bd1614d06421"
     private let redirectURI = "spotifydui://callback"
-    private let scope = "user-read-playback-state user-modify-playback-state"
+    private let scope = "user-read-playback-state user-modify-playback-state playlist-read-private playlist-read-collaborative"
 
     private var codeVerifier: String?
     private var codeChallenge: String?

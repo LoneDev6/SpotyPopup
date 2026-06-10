@@ -1,9 +1,16 @@
 import Foundation
 
-struct Track: Codable {
+struct Track: Codable, Identifiable {
+    let id: String
     let name: String
     let artists: [Artist]
     let album: Album
+    let durationMs: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, artists, album
+        case durationMs = "duration_ms"
+    }
 
     struct Artist: Codable {
         let name: String
@@ -26,5 +33,13 @@ struct Track: Codable {
 
     var albumArtURL: String? {
         album.images.first?.url
+    }
+
+    var durationFormatted: String {
+        guard let ms = durationMs else { return "--:--" }
+        let seconds = ms / 1000
+        let mins = seconds / 60
+        let secs = seconds % 60
+        return String(format: "%d:%02d", mins, secs)
     }
 }
