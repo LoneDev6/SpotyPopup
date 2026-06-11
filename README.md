@@ -1,72 +1,96 @@
 # SpotyPopup
 
-Menu bar app nativa macOS per controllare spotifyd (Spotify headless daemon).
+Native macOS menu bar app for controlling spotifyd (Spotify headless daemon).\
+It also works with Spotify client and Spotify PWA.
 
-<img width="321" height="513" alt="image" src="https://github.com/user-attachments/assets/f61f21e3-281c-4301-abea-f5dfe61013e1" />
+<img width="321" height="513" alt="SpotyPopup Screenshot" src="https://github.com/user-attachments/assets/f61f21e3-281c-4301-abea-f5dfe61013e1" />
 
 ## Features
 
-- 🎵 Controlli playback (play/pause/next/previous)
-- 🖼️ Visualizzazione copertina album
-- 📱 Menu bar nativo macOS
-- 🔐 Autenticazione OAuth via browser
+- Playback controls (Play/Pause, Next, Previous)
+- Album artwork display
+- Native macOS menu bar integration
+- Secure Spotify OAuth authentication via browser
+- Lightweight and minimal UI
+
+## Requirements
+
+- macOS 13 or later
+- Swift 5.9 or later
+- spotifyd installed and running (or the Spotify client or the Spotify PWA)
+- Spotify Premium account
 
 ## Setup
 
-### 1. Spotify Developer App
+### 1. Create a Spotify App
 
-Crea una app su [Spotify Developer Dashboard](https://developer.spotify.com/dashboard):
+Create an application on the Spotify Developer Dashboard:
 
-1. Vai su https://developer.spotify.com/dashboard
-2. Clicca "Create app"
-3. Nome: `SpotyPopup` (o quello che vuoi)
-4. Redirect URI: `spotypopup://callback`
-5. Scopes necessari: `user-read-playback-state`, `user-modify-playback-state`
-6. Salva solo il **Client ID** (secret non necessario)
+1. Go to https://developer.spotify.com/dashboard
+2. Click **Create App**
+3. Enter any app name you prefer
+4. Add the following Redirect URI:
 
-### 2. Configura Client ID
+```text
+spotypopup://callback
+````
 
-Modifica `Sources/SpotyPopup/SpotifyAuth.swift`:
+5. Add the following scopes:
 
-```swift
-private let clientID = "TUO_CLIENT_ID_QUI"
+```text
+user-read-playback-state
+user-modify-playback-state
 ```
 
-**Sicurezza**: L'app usa PKCE, quindi NON serve il client secret. È sicura da pubblicare!
+6. Save the application and copy the **Client ID**
 
-### 3. Build ed esegui
+> A Client Secret is not required.
 
-**Opzione A - App Bundle (raccomandato per uso normale):**
+### 2. Configure Your Client ID
+
+Edit `Sources/SpotyPopup/SpotifyAuth.swift`:
+
+```swift
+private let clientID = "YOUR_CLIENT_ID"
+```
+
+### 3. Build and Run
+
+#### Option A: App Bundle (Recommended)
 
 ```bash
 ./build_app.sh
 open SpotyPopup.app
 ```
 
-**Opzione B - Debug diretto:**
+#### Option B: Direct Debug Run
 
 ```bash
 swift run
 ```
 
-Note: Per usare il custom URL scheme (`spotypopup://callback`) serve l'app bundle. Se usi `swift run` direttamente, il redirect OAuth non funzionerà.
+> OAuth callbacks require the app bundle because the custom URL scheme (`spotypopup://callback`) must be registered with macOS.
 
-## Requisiti
+## Usage
 
-- macOS 13+
-- spotifyd installato e in esecuzione
-- Swift 5.9+
+1. Launch SpotyPopup
+2. Click the menu bar icon
+3. Select **Login with Spotify**
+4. Authorize the application in your browser
+5. Start controlling Spotify playback directly from the menu bar
 
-## Utilizzo
+## Authentication
 
-1. Clicca l'icona nella menu bar
-2. Al primo avvio, clicca "Login with Spotify"
-3. Autorizza l'app nel browser
-4. Inizia a controllare la musica!
+SpotyPopup uses **OAuth Authorization Code Flow with PKCE**.
 
-## Note
+Benefits:
 
-- spotifyd deve essere in esecuzione per funzionare
-- L'app usa Spotify Web API per controllare il playback
-- Autenticazione via **PKCE** (sicura per app pubbliche, no secret necessario)
-- Il token viene salvato in UserDefaults
+* No client secret required
+* Safe for public/open-source applications
+* Recommended by Spotify for native apps
+* Browser-based authentication
+
+## Notes
+
+* Playback information is retrieved using the Spotify Web API.
+* Access and refresh tokens are stored locally to avoid repeated logins.
