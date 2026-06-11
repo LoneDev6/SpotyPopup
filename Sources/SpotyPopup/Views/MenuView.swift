@@ -310,14 +310,22 @@ class MenuView: NSView {
             yPos -= 240
             albumArtView.frame = NSRect(x: 40, y: yPos, width: 240, height: 240)
 
-            // Track info below album
+            // Track name below album
             yPos -= 12
-            trackNameLabel.frame = NSRect(x: 20, y: yPos - 40, width: bounds.width - 40, height: 40)
-            yPos -= 44
-            artistLabel.frame = NSRect(x: 20, y: yPos - 20, width: bounds.width - 40, height: 20)
+            let trackNameHeight: CGFloat = 22
+            trackNameLabel.frame = NSRect(x: 20, y: yPos - trackNameHeight, width: bounds.width - 40, height: trackNameHeight)
+            yPos -= trackNameHeight
 
-            // Progress bar
-            progressBarView.frame = NSRect(x: 0, y: 80, width: bounds.width, height: 60)
+            // Artist below track name (reduced gap)
+            yPos -= 4
+            let artistHeight: CGFloat = 18
+            artistLabel.frame = NSRect(x: 20, y: yPos - artistHeight, width: bounds.width - 40, height: artistHeight)
+            yPos -= artistHeight
+
+            // Progress bar below artist
+            yPos -= 12
+            let progressBarHeight: CGFloat = 50
+            progressBarView.frame = NSRect(x: 0, y: yPos - progressBarHeight, width: bounds.width, height: progressBarHeight)
 
             // Controls at bottom
             let controlsY: CGFloat = 16
