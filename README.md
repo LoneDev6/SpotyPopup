@@ -2,6 +2,8 @@
 
 Menu bar app nativa macOS per controllare spotifyd (Spotify headless daemon).
 
+<img width="321" height="513" alt="image" src="https://github.com/user-attachments/assets/f61f21e3-281c-4301-abea-f5dfe61013e1" />
+
 ## Features
 
 - 🎵 Controlli playback (play/pause/next/previous)
