@@ -1,4 +1,4 @@
-# SpotifydUI - Specifiche Progetto
+# SpotyPopup - Specifiche Progetto
 
 ## Obiettivo
 Applicazione nativa macOS per controllare spotifyd (Spotify headless daemon) tramite menu bar.
@@ -46,10 +46,10 @@ Applicazione nativa macOS per controllare spotifyd (Spotify headless daemon) tra
 ## Architettura
 
 ```
-SpotifydUI/
+SpotyPopup/
 ├── Sources/
-│   └── SpotifydUI/
-│       ├── SpotifydUIApp.swift      # Entry point + AppDelegate
+│   └── SpotyPopup/
+│       ├── SpotyPopupApp.swift      # Entry point + AppDelegate
 │       ├── MenuBarController.swift  # NSStatusBar management
 │       ├── SpotifyAPI.swift         # Spotify Web API client
 │       ├── Models/

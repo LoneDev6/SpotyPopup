@@ -1,4 +1,4 @@
-# SpotifydUI
+# SpotyPopup
 
 Menu bar app nativa macOS per controllare spotifyd (Spotify headless daemon).
 
@@ -17,14 +17,14 @@ Crea una app su [Spotify Developer Dashboard](https://developer.spotify.com/dash
 
 1. Vai su https://developer.spotify.com/dashboard
 2. Clicca "Create app"
-3. Nome: `SpotifydUI` (o quello che vuoi)
-4. Redirect URI: `spotifydui://callback`
+3. Nome: `SpotyPopup` (o quello che vuoi)
+4. Redirect URI: `spotypopup://callback`
 5. Scopes necessari: `user-read-playback-state`, `user-modify-playback-state`
 6. Salva solo il **Client ID** (secret non necessario)
 
 ### 2. Configura Client ID
 
-Modifica `Sources/SpotifydUI/SpotifyAuth.swift`:
+Modifica `Sources/SpotyPopup/SpotifyAuth.swift`:
 
 ```swift
 private let clientID = "TUO_CLIENT_ID_QUI"
@@ -38,7 +38,7 @@ private let clientID = "TUO_CLIENT_ID_QUI"
 
 ```bash
 ./build_app.sh
-open SpotifydUI.app
+open SpotyPopup.app
 ```
 
 **Opzione B - Debug diretto:**
@@ -47,7 +47,7 @@ open SpotifydUI.app
 swift run
 ```
 
-Note: Per usare il custom URL scheme (`spotifydui://callback`) serve l'app bundle. Se usi `swift run` direttamente, il redirect OAuth non funzionerà.
+Note: Per usare il custom URL scheme (`spotypopup://callback`) serve l'app bundle. Se usi `swift run` direttamente, il redirect OAuth non funzionerà.
 
 ## Requisiti
 

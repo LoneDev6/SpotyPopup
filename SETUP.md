@@ -1,4 +1,4 @@
-# Setup Completo SpotifydUI
+# Setup Completo SpotyPopup
 
 ## Passo 1: Crea Spotify App
 
@@ -6,9 +6,9 @@
 2. Fai login con il tuo account Spotify
 3. Clicca **"Create app"**
 4. Compila:
-   - **App name**: `SpotifydUI`
+   - **App name**: `SpotyPopup`
    - **App description**: `Menu bar controller for spotifyd`
-   - **Redirect URI**: `spotifydui://callback` ⚠️ IMPORTANTE (custom URL scheme, non http)
+   - **Redirect URI**: `spotypopup://callback` ⚠️ IMPORTANTE (custom URL scheme, non http)
    - **Which API/SDKs are you planning to use?**: Web API
 5. Accetta i termini e clicca **"Save"**
 6. Nella pagina dell'app, clicca **"Settings"**
@@ -16,7 +16,7 @@
 
 ## Passo 2: Configura il Client ID
 
-Apri `Sources/SpotifydUI/SpotifyAuth.swift` e modifica:
+Apri `Sources/SpotyPopup/SpotifyAuth.swift` e modifica:
 
 **Riga 8:**
 ```swift
@@ -43,10 +43,10 @@ spotifyd --no-daemon --backend portaudio
 
 ```bash
 ./build_app.sh
-open SpotifydUI.app
+open SpotyPopup.app
 ```
 
-Lo script crea `SpotifydUI.app` con l'Info.plist che registra il custom URL scheme `spotifydui://`.
+Lo script crea `SpotyPopup.app` con l'Info.plist che registra il custom URL scheme `spotypopup://`.
 
 **Per debug veloce (senza autenticazione funzionante):**
 ```bash
@@ -71,7 +71,7 @@ swift run
 - Seleziona spotifyd come dispositivo di output
 
 **"Not authenticated" dopo il login**:
-- Controlla che il redirect URI sia esattamente `spotifydui://callback`
+- Controlla che il redirect URI sia esattamente `spotypopup://callback`
 - Verifica Client ID e Secret in `SpotifyAuth.swift`
 - Se usi Xcode, assicurati che l'Info.plist sia incluso nel bundle
 

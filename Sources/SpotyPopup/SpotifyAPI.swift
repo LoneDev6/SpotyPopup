@@ -25,6 +25,19 @@ class SpotifyAPI: ObservableObject {
         self.authHandler = handler
     }
 
+    private func handleAuthError(statusCode: Int) async -> Bool {
+        if statusCode == 401 || statusCode == 403 {
+            AppLogger.info("Token error (\(statusCode)), attempting refresh...", category: AppLogger.auth)
+            await authHandler?.refreshAccessToken()
+
+            if let newToken = authHandler?.accessToken {
+                self.accessToken = newToken
+                return true
+            }
+        }
+        return false
+    }
+
     func fetchCurrentPlayback() async {
         guard let token = accessToken else { return }
 
@@ -40,18 +53,18 @@ class SpotifyAPI: ObservableObject {
             guard let httpResponse = response as? HTTPURLResponse else { return }
 
             if httpResponse.statusCode == 204 {
-                DispatchQueue.main.async {
+                await MainActor.run {
                     self.currentPlayback = nil
                 }
                 return
             }
 
             let playback = try JSONDecoder().decode(PlaybackState.self, from: data)
-            DispatchQueue.main.async {
+            await MainActor.run {
                 self.currentPlayback = playback
             }
         } catch {
-            print("Failed to fetch playback: \(error)")
+            AppLogger.error("Failed to fetch playback: \(error)", category: AppLogger.playback)
         }
     }
 
@@ -90,20 +103,20 @@ class SpotifyAPI: ObservableObject {
             _ = try await URLSession.shared.data(for: request)
             await fetchCurrentPlayback()
         } catch {
-            print("Failed to send command \(endpoint): \(error)")
+            AppLogger.error("Failed to send command \(endpoint): \(error)", category: AppLogger.api)
         }
     }
 
     func fetchPlaylists() async {
         guard let token = accessToken else {
-            print("No token for fetchPlaylists")
+            AppLogger.error("No token for fetchPlaylists", category: AppLogger.auth)
             DispatchQueue.main.async {
                 self.lastError = "No access token - please login"
             }
             return
         }
 
-        print("Fetching playlists...")
+        AppLogger.info("Fetching playlists...", category: AppLogger.api)
 
         var request = URLRequest(url: URL(string: "\(baseURL)/me/playlists?limit=50")!)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -112,7 +125,7 @@ class SpotifyAPI: ObservableObject {
             let (data, response) = try await URLSession.shared.data(for: request)
 
             if let httpResponse = response as? HTTPURLResponse {
-                print("Playlists response status: \(httpResponse.statusCode)")
+                AppLogger.debug("Playlists response status: \(httpResponse.statusCode)", category: AppLogger.api)
 
                 if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
                     // Token expired or invalid - try to refresh
@@ -124,7 +137,7 @@ class SpotifyAPI: ObservableObject {
                         self.accessToken = newToken
                         await fetchPlaylists()
                     } else {
-                        DispatchQueue.main.async {
+                        await MainActor.run {
                             self.lastError = "Authentication failed - please login again"
                         }
                     }
@@ -133,8 +146,8 @@ class SpotifyAPI: ObservableObject {
 
                 if httpResponse.statusCode != 200 {
                     let errorString = String(data: data, encoding: .utf8) ?? "No error details"
-                    print("Playlists error: \(errorString)")
-                    DispatchQueue.main.async {
+                    AppLogger.error("Playlists error: \(errorString)", category: AppLogger.api)
+                    await MainActor.run {
                         self.lastError = "API Error \(httpResponse.statusCode): \(errorString)"
                     }
                     return
@@ -142,19 +155,19 @@ class SpotifyAPI: ObservableObject {
             }
 
             let playlistResponse = try JSONDecoder().decode(PlaylistsResponse.self, from: data)
-            print("Decoded \(playlistResponse.items.count) playlists")
+            AppLogger.debug("Decoded \(playlistResponse.items.count) playlists", category: AppLogger.api)
 
             // Create synthetic "Liked Songs" playlist
             let likedSongs = Playlist.createLikedSongsPlaylist()
 
-            DispatchQueue.main.async {
+            await MainActor.run {
                 self.playlists = [likedSongs] + playlistResponse.items
                 self.lastError = nil
-                print("Set \(self.playlists.count) playlists")
+                AppLogger.debug("Set \(self.playlists.count) playlists", category: AppLogger.api)
             }
         } catch {
-            print("Playlist decode error: \(error)")
-            DispatchQueue.main.async {
+            AppLogger.error("Playlist decode error: \(error)", category: AppLogger.api)
+            await MainActor.run {
                 self.lastError = "Decode error: \(error.localizedDescription)"
             }
         }
@@ -188,19 +201,12 @@ class SpotifyAPI: ObservableObject {
             let (data, response) = try await URLSession.shared.data(for: request)
 
             if let httpResponse = response as? HTTPURLResponse {
-                if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
-                    // Token expired or invalid - try to refresh
-                    print("Token error (\(httpResponse.statusCode)), attempting refresh...")
-                    await authHandler?.refreshAccessToken()
-
-                    // Retry with new token if available
-                    if let newToken = authHandler?.accessToken {
-                        self.accessToken = newToken
-                        await fetchPlaylistTracks(playlistId: playlistId, reset: reset)
-                    } else {
-                        await MainActor.run {
-                            self.tracksError = "Authentication failed - please login again"
-                        }
+                if await handleAuthError(statusCode: httpResponse.statusCode) {
+                    await fetchPlaylistTracks(playlistId: playlistId, reset: reset)
+                    return
+                } else if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
+                    await MainActor.run {
+                        self.tracksError = "Authentication failed - please login again"
                     }
                     return
                 }
@@ -258,18 +264,18 @@ class SpotifyAPI: ObservableObject {
             if playlistId == "liked_songs" {
                 let decoded = try JSONDecoder().decode(LikedTracksResponse.self, from: data)
                 nextTracksURL = decoded.next
-                DispatchQueue.main.async {
+                await MainActor.run {
                     self.currentPlaylistTracks.append(contentsOf: decoded.items.map { $0.track })
                 }
             } else {
                 let decoded = try JSONDecoder().decode(PlaylistTracksResponse.self, from: data)
                 nextTracksURL = decoded.next
-                DispatchQueue.main.async {
+                await MainActor.run {
                     self.currentPlaylistTracks.append(contentsOf: decoded.items.compactMap { $0.track })
                 }
             }
         } catch {
-            print("Failed to load more tracks: \(error)")
+            AppLogger.error("Failed to load more tracks: \(error)", category: AppLogger.api)
         }
     }
 
@@ -300,7 +306,7 @@ class SpotifyAPI: ObservableObject {
         do {
             _ = try await URLSession.shared.data(for: request)
         } catch {
-            print("Failed to add to queue: \(error)")
+            AppLogger.error("Failed to add to queue: \(error)", category: AppLogger.playback)
         }
     }
 
@@ -313,11 +319,11 @@ class SpotifyAPI: ObservableObject {
         do {
             let (data, _) = try await URLSession.shared.data(for: request)
             let response = try JSONDecoder().decode(QueueResponse.self, from: data)
-            DispatchQueue.main.async {
+            await MainActor.run {
                 self.queue = response.queue
             }
         } catch {
-            print("Failed to fetch queue: \(error)")
+            AppLogger.error("Failed to fetch queue: \(error)", category: AppLogger.playback)
         }
     }
 
@@ -331,18 +337,18 @@ class SpotifyAPI: ObservableObject {
 
         do {
             _ = try await URLSession.shared.data(for: request)
-            DispatchQueue.main.async {
+            await MainActor.run {
                 self.isShuffleOn = newState
             }
         } catch {
-            print("Failed to toggle shuffle: \(error)")
+            AppLogger.error("Failed to toggle shuffle: \(error)", category: AppLogger.playback)
         }
     }
 
     func fetchShuffleState() async {
         // Get from current playback
         if let playback = currentPlayback {
-            DispatchQueue.main.async {
+            await MainActor.run {
                 self.isShuffleOn = playback.shuffleState ?? false
             }
         }
@@ -359,7 +365,7 @@ class SpotifyAPI: ObservableObject {
         do {
             _ = try await URLSession.shared.data(for: request)
         } catch {
-            print("Failed to set volume: \(error)")
+            AppLogger.error("Failed to set volume: \(error)", category: AppLogger.playback)
         }
     }
 
@@ -373,7 +379,7 @@ class SpotifyAPI: ObservableObject {
         do {
             _ = try await URLSession.shared.data(for: request)
         } catch {
-            print("Failed to seek: \(error)")
+            AppLogger.error("Failed to seek: \(error)", category: AppLogger.playback)
         }
     }
 
@@ -386,11 +392,11 @@ class SpotifyAPI: ObservableObject {
         do {
             let (data, _) = try await URLSession.shared.data(for: request)
             let response = try JSONDecoder().decode(DevicesResponse.self, from: data)
-            DispatchQueue.main.async {
+            await MainActor.run {
                 self.availableDevices = response.devices
             }
         } catch {
-            print("Failed to fetch devices: \(error)")
+            AppLogger.error("Failed to fetch devices: \(error)", category: AppLogger.api)
         }
     }
 
@@ -413,7 +419,7 @@ class SpotifyAPI: ObservableObject {
             try? await Task.sleep(nanoseconds: 500_000_000)
             await fetchCurrentPlayback()
         } catch {
-            print("Failed to transfer playback: \(error)")
+            AppLogger.error("Failed to transfer playback: \(error)", category: AppLogger.playback)
         }
     }
 }

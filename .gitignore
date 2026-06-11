@@ -7,5 +7,6 @@ DerivedData/
 .swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
 .netrc
 *.xcodeproj
-SpotifydUI.app/
+SpotyPopup.app/
 graphify-out/
+/Sources/SpotyPopup/Config.swift

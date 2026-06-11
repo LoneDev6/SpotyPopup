@@ -1,16 +1,16 @@
 #!/bin/bash
 set -e
 
-echo "🛑 Killing existing SpotifydUI processes..."
-pkill -f SpotifydUI || true
+echo "🛑 Killing existing SpotyPopup processes..."
+pkill -f SpotyPopup || true
 
-echo "🔨 Building SpotifydUI..."
+echo "🔨 Building SpotyPopup..."
 
 # Build the executable
 swift build -c release
 
 # Create app bundle structure
-APP_NAME="SpotifydUI.app"
+APP_NAME="SpotyPopup.app"
 BUNDLE_DIR="$APP_NAME/Contents"
 MACOS_DIR="$BUNDLE_DIR/MacOS"
 RESOURCES_DIR="$BUNDLE_DIR/Resources"
@@ -20,7 +20,7 @@ mkdir -p "$MACOS_DIR"
 mkdir -p "$RESOURCES_DIR"
 
 # Copy executable
-cp .build/release/SpotifydUI "$MACOS_DIR/"
+cp .build/release/SpotyPopup "$MACOS_DIR/"
 
 # Copy icon
 cp Resources/AppIcon.icns "$RESOURCES_DIR/"
@@ -32,11 +32,11 @@ cat > "$BUNDLE_DIR/Info.plist" << 'EOF'
 <plist version="1.0">
 <dict>
     <key>CFBundleExecutable</key>
-    <string>SpotifydUI</string>
+    <string>SpotyPopup</string>
     <key>CFBundleIdentifier</key>
-    <string>com.spotifydui.app</string>
+    <string>com.spotypopup.app</string>
     <key>CFBundleName</key>
-    <string>SpotifydUI</string>
+    <string>SpotyPopup</string>
     <key>CFBundleVersion</key>
     <string>1.0</string>
     <key>CFBundleShortVersionString</key>
@@ -51,10 +51,10 @@ cat > "$BUNDLE_DIR/Info.plist" << 'EOF'
     <array>
         <dict>
             <key>CFBundleURLName</key>
-            <string>com.spotifydui.auth</string>
+            <string>com.spotypopup.auth</string>
             <key>CFBundleURLSchemes</key>
             <array>
-                <string>spotifydui</string>
+                <string>spotypopup</string>
             </array>
         </dict>
     </array>
@@ -64,5 +64,5 @@ EOF
 
 echo "✅ App bundle created: $APP_NAME"
 echo ""
-echo "🚀 Starting SpotifydUI..."
+echo "🚀 Starting SpotyPopup..."
 open "$APP_NAME"

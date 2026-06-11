@@ -2,14 +2,14 @@
 import PackageDescription
 
 let package = Package(
-    name: "SpotifydUI",
+    name: "SpotyPopup",
     platforms: [
         .macOS(.v13)
     ],
     dependencies: [],
     targets: [
         .executableTarget(
-            name: "SpotifydUI",
+            name: "SpotyPopup",
             dependencies: [],
             path: "Sources"
         )

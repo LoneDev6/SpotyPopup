@@ -6,8 +6,8 @@ class SpotifyAuth: ObservableObject {
     @Published var isAuthenticated = false
     @Published var accessToken: String?
 
-    private let clientID = "65391d22d97c42f29120bd1614d06421"
-    private let redirectURI = "spotifydui://callback"
+    private let clientID = SpotifyConfig.clientID
+    private let redirectURI = SpotifyConfig.redirectURI
     private let scope = "user-read-playback-state user-modify-playback-state playlist-read-private playlist-read-collaborative user-library-read playlist-modify-public playlist-modify-private"
 
     private var codeVerifier: String?
@@ -33,12 +33,11 @@ class SpotifyAuth: ObservableObject {
         // Generate random code verifier (43-128 chars)
         var bytes = [UInt8](repeating: 0, count: 32)
         _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
-        codeVerifier = Data(bytes).base64EncodedString()
+        let base64 = Data(bytes).base64EncodedString()
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "=", with: "")
-            .prefix(128)
-            .description
+        codeVerifier = String(base64.prefix(128))
 
         // Generate code challenge (SHA256 of verifier)
         guard let verifier = codeVerifier,
@@ -63,12 +62,15 @@ class SpotifyAuth: ObservableObject {
             URLQueryItem(name: "code_challenge_method", value: "S256"),
             URLQueryItem(name: "code_challenge", value: codeChallenge)
         ]
-        return components.url!
+        guard let url = components.url else {
+            fatalError("Failed to build authorization URL")
+        }
+        return url
     }
 
     private func exchangeCodeForToken(code: String) {
         guard let verifier = codeVerifier else {
-            print("Missing code verifier")
+            AppLogger.error("Missing code verifier", category: AppLogger.auth)
             return
         }
 
@@ -92,7 +94,7 @@ class SpotifyAuth: ObservableObject {
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             guard let data = data else {
                 if let error = error {
-                    print("Token exchange error: \(error)")
+                    AppLogger.error("Token exchange error: \(error)", category: AppLogger.auth)
                 }
                 return
             }
@@ -110,7 +112,7 @@ class SpotifyAuth: ObservableObject {
                         self?.saveTokens(accessToken: token, refreshToken: refresh, expiresAt: self?.tokenExpiresAt)
                     }
                 } else {
-                    print("Token exchange failed: \(json)")
+                    AppLogger.error("Token exchange failed: \(json)", category: AppLogger.auth)
                 }
             }
         }.resume()
@@ -144,7 +146,7 @@ class SpotifyAuth: ObservableObject {
 
     func refreshAccessToken() async {
         guard let refresh = refreshToken else {
-            print("No refresh token available")
+            AppLogger.error("No refresh token available", category: AppLogger.auth)
             return
         }
 
@@ -176,13 +178,13 @@ class SpotifyAuth: ObservableObject {
                     self.saveTokens(accessToken: token, refreshToken: refresh, expiresAt: self.tokenExpiresAt)
                 }
             } else {
-                print("Token refresh failed, need to re-authenticate")
+                AppLogger.error("Token refresh failed, need to re-authenticate", category: AppLogger.auth)
                 await MainActor.run {
                     self.logout()
                 }
             }
         } catch {
-            print("Token refresh error: \(error)")
+            AppLogger.error("Token refresh error: \(error)", category: AppLogger.auth)
         }
     }
 

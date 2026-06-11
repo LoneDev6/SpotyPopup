@@ -1,0 +1,298 @@
+import AppKit
+
+class QueueView: NSView {
+    private let headerLabel = NSTextField(labelWithString: "Queue")
+    private let closeButton = NSButton()
+    private let nowPlayingLabel = NSTextField(labelWithString: "Now Playing")
+    private let nextInQueueLabel = NSTextField(labelWithString: "Next in Queue")
+    private let scrollView = NSScrollView()
+    private let trackListContainer = NSView()
+    private let emptyStateView = NSView()
+    private let emptyIconView = NSImageView()
+    private let emptyLabel = NSTextField(labelWithString: "Queue is empty")
+
+    private var trackRowViews: [QueueTrackRow] = []
+    private var currentTrackView: QueueTrackRow?
+
+    var onClose: (() -> Void)?
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        setupViews()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) not implemented")
+    }
+
+    private func setupViews() {
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+
+        // Header label
+        headerLabel.font = NSFont.boldSystemFont(ofSize: 18)
+        headerLabel.textColor = .labelColor
+        addSubview(headerLabel)
+
+        // Close button
+        closeButton.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: nil)
+        closeButton.bezelStyle = .recessed
+        closeButton.isBordered = false
+        closeButton.target = self
+        closeButton.action = #selector(closeButtonTapped)
+        addSubview(closeButton)
+
+        // Now playing label
+        nowPlayingLabel.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
+        nowPlayingLabel.textColor = .secondaryLabelColor
+        addSubview(nowPlayingLabel)
+
+        // Next in queue label
+        nextInQueueLabel.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
+        nextInQueueLabel.textColor = .secondaryLabelColor
+        addSubview(nextInQueueLabel)
+
+        // Scroll view
+        scrollView.hasVerticalScroller = true
+        scrollView.drawsBackground = false
+        scrollView.documentView = trackListContainer
+        addSubview(scrollView)
+
+        // Empty state
+        emptyIconView.image = NSImage(systemSymbolName: "music.note.list", accessibilityDescription: nil)
+        emptyIconView.contentTintColor = .secondaryLabelColor
+        emptyStateView.addSubview(emptyIconView)
+
+        emptyLabel.font = NSFont.systemFont(ofSize: 14, weight: .medium)
+        emptyLabel.textColor = .secondaryLabelColor
+        emptyStateView.addSubview(emptyLabel)
+
+        addSubview(emptyStateView)
+        emptyStateView.isHidden = true
+    }
+
+    override func layout() {
+        super.layout()
+
+        // Header
+        closeButton.frame = NSRect(x: bounds.width - 40, y: bounds.height - 40, width: 24, height: 24)
+        headerLabel.sizeToFit()
+        headerLabel.frame.origin = NSPoint(x: 20, y: bounds.height - 40)
+
+        var yOffset = bounds.height - 70
+
+        // Current track section
+        if let currentView = currentTrackView {
+            nowPlayingLabel.sizeToFit()
+            nowPlayingLabel.frame.origin = NSPoint(x: 20, y: yOffset)
+            yOffset -= 28
+
+            currentView.frame = NSRect(x: 0, y: yOffset - 64, width: bounds.width, height: 64)
+            yOffset -= 80
+        }
+
+        // Next in queue label
+        if !trackRowViews.isEmpty {
+            nextInQueueLabel.sizeToFit()
+            nextInQueueLabel.frame.origin = NSPoint(x: 20, y: yOffset)
+            yOffset -= 32
+        }
+
+        // Scroll view with track list
+        scrollView.frame = NSRect(x: 0, y: 0, width: bounds.width, height: yOffset)
+
+        layoutTrackList()
+
+        // Empty state
+        if emptyStateView.isHidden == false {
+            emptyIconView.frame = NSRect(
+                x: (bounds.width - 48) / 2,
+                y: bounds.height / 2 + 20,
+                width: 48,
+                height: 48
+            )
+            emptyLabel.sizeToFit()
+            emptyLabel.frame.origin = NSPoint(
+                x: (bounds.width - emptyLabel.frame.width) / 2,
+                y: bounds.height / 2 - 20
+            )
+        }
+    }
+
+    private func layoutTrackList() {
+        var yOffset: CGFloat = 0
+        let totalHeight = CGFloat(trackRowViews.count * 60)
+
+        trackListContainer.frame = NSRect(x: 0, y: 0, width: bounds.width, height: max(totalHeight, scrollView.frame.height))
+
+        for rowView in trackRowViews.reversed() {
+            rowView.frame = NSRect(x: 0, y: yOffset, width: bounds.width, height: 60)
+            yOffset += 60
+        }
+    }
+
+    private var lastQueueIds: [String] = []
+    private var lastCurrentTrackId: String?
+
+    func configure(queue: [Track], currentTrack: Track?, onClose: @escaping () -> Void) {
+        self.onClose = onClose
+
+        let queueIds = queue.map(\.id)
+        let currentId = currentTrack?.id
+
+        // Only rebuild if changed
+        let queueChanged = queueIds != lastQueueIds
+        let currentChanged = currentId != lastCurrentTrackId
+
+        guard queueChanged || currentChanged else { return }
+
+        lastQueueIds = queueIds
+        lastCurrentTrackId = currentId
+
+        // Clear existing views
+        currentTrackView?.removeFromSuperview()
+        currentTrackView = nil
+        trackRowViews.forEach { $0.removeFromSuperview() }
+        trackRowViews.removeAll()
+
+        // Show/hide sections
+        let isEmpty = queue.isEmpty && currentTrack == nil
+        emptyStateView.isHidden = !isEmpty
+        nowPlayingLabel.isHidden = currentTrack == nil
+        nextInQueueLabel.isHidden = queue.isEmpty
+
+        if let current = currentTrack {
+            let currentRow = QueueTrackRow()
+            currentRow.configure(track: current, isPlaying: true)
+            addSubview(currentRow)
+            currentTrackView = currentRow
+        }
+
+        for track in queue {
+            let rowView = QueueTrackRow()
+            rowView.configure(track: track, isPlaying: false)
+            trackListContainer.addSubview(rowView)
+            trackRowViews.append(rowView)
+        }
+
+        if !queue.isEmpty {
+            nextInQueueLabel.stringValue = "Next in Queue (\(queue.count) tracks)"
+        }
+
+        needsLayout = true
+    }
+
+    @objc private func closeButtonTapped() {
+        onClose?()
+    }
+}
+
+class QueueTrackRow: NSView {
+    private let albumArtView = NSImageView()
+    private let trackNameLabel = NSTextField(labelWithString: "")
+    private let artistLabel = NSTextField(labelWithString: "")
+    private let durationLabel = NSTextField(labelWithString: "")
+    private let playingIconView = NSImageView()
+
+    private var isPlaying = false
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        setupViews()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) not implemented")
+    }
+
+    private func setupViews() {
+        wantsLayer = true
+
+        // Album art
+        albumArtView.imageScaling = .scaleProportionallyUpOrDown
+        albumArtView.wantsLayer = true
+        albumArtView.layer?.cornerRadius = 4
+        albumArtView.layer?.masksToBounds = true
+        addSubview(albumArtView)
+
+        // Track name
+        trackNameLabel.isBordered = false
+        trackNameLabel.isEditable = false
+        trackNameLabel.drawsBackground = false
+        trackNameLabel.lineBreakMode = .byTruncatingTail
+        addSubview(trackNameLabel)
+
+        // Artist
+        artistLabel.isBordered = false
+        artistLabel.isEditable = false
+        artistLabel.drawsBackground = false
+        artistLabel.textColor = .secondaryLabelColor
+        artistLabel.font = NSFont.systemFont(ofSize: 12)
+        artistLabel.lineBreakMode = .byTruncatingTail
+        addSubview(artistLabel)
+
+        // Duration
+        durationLabel.isBordered = false
+        durationLabel.isEditable = false
+        durationLabel.drawsBackground = false
+        durationLabel.textColor = .secondaryLabelColor
+        durationLabel.font = NSFont.systemFont(ofSize: 13)
+        durationLabel.alignment = .right
+        addSubview(durationLabel)
+
+        // Playing icon
+        playingIconView.image = NSImage(systemSymbolName: "speaker.wave.2.fill", accessibilityDescription: nil)
+        playingIconView.contentTintColor = .controlAccentColor
+        addSubview(playingIconView)
+    }
+
+    override func layout() {
+        super.layout()
+
+        albumArtView.frame = NSRect(x: 20, y: 6, width: 48, height: 48)
+
+        let textX: CGFloat = 80
+        let textWidth = bounds.width - textX - 70
+
+        trackNameLabel.frame = NSRect(x: textX, y: 32, width: textWidth, height: 18)
+        artistLabel.frame = NSRect(x: textX, y: 12, width: textWidth, height: 16)
+
+        durationLabel.frame = NSRect(x: bounds.width - 70, y: 24, width: 50, height: 16)
+
+        playingIconView.frame = NSRect(x: textX + trackNameLabel.frame.width + 4, y: 34, width: 14, height: 14)
+        playingIconView.isHidden = !isPlaying
+    }
+
+    func configure(track: Track, isPlaying: Bool) {
+        self.isPlaying = isPlaying
+
+        trackNameLabel.stringValue = track.name
+        trackNameLabel.font = NSFont.systemFont(ofSize: 14, weight: isPlaying ? .semibold : .regular)
+
+        artistLabel.stringValue = track.artistNames
+        durationLabel.stringValue = track.durationFormatted
+
+        if isPlaying {
+            layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.1).cgColor
+        } else {
+            layer?.backgroundColor = NSColor.clear.cgColor
+        }
+
+        if let artURL = track.albumArtURL, let url = URL(string: artURL) {
+            loadImage(from: url)
+        } else {
+            albumArtView.image = NSImage(systemSymbolName: "music.note", accessibilityDescription: nil)
+        }
+
+        needsLayout = true
+    }
+
+    private func loadImage(from url: URL) {
+        URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
+            guard let data = data, let image = NSImage(data: data) else { return }
+            DispatchQueue.main.async {
+                self?.albumArtView.image = image
+            }
+        }.resume()
+    }
+}

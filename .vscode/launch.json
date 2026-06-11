@@ -4,21 +4,21 @@
             "type": "swift",
             "request": "launch",
             "args": [],
-            "cwd": "${workspaceFolder:SpotifydUI}",
-            "name": "Debug SpotifydUI",
-            "target": "SpotifydUI",
+            "cwd": "${workspaceFolder:SpotyPopup}",
+            "name": "Debug SpotyPopup",
+            "target": "SpotyPopup",
             "configuration": "debug",
-            "preLaunchTask": "swift: Build Debug SpotifydUI"
+            "preLaunchTask": "swift: Build Debug SpotyPopup"
         },
         {
             "type": "swift",
             "request": "launch",
             "args": [],
-            "cwd": "${workspaceFolder:SpotifydUI}",
-            "name": "Release SpotifydUI",
-            "target": "SpotifydUI",
+            "cwd": "${workspaceFolder:SpotyPopup}",
+            "name": "Release SpotyPopup",
+            "target": "SpotyPopup",
             "configuration": "release",
-            "preLaunchTask": "swift: Build Release SpotifydUI"
+            "preLaunchTask": "swift: Build Release SpotyPopup"
         }
     ]
 }
