@@ -72,8 +72,8 @@ class MenuBarController: NSObject, NSPopoverDelegate {
                 api: api,
                 auth: auth,
                 onOpenMainWindow: {},
-                onClose: { [weak self] in
-                    self?.closePopover()
+                onClose: {
+                    NSApplication.shared.terminate(nil)
                 }
             )
         )

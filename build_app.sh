@@ -13,12 +13,17 @@ swift build -c release
 APP_NAME="SpotifydUI.app"
 BUNDLE_DIR="$APP_NAME/Contents"
 MACOS_DIR="$BUNDLE_DIR/MacOS"
+RESOURCES_DIR="$BUNDLE_DIR/Resources"
 
 rm -rf "$APP_NAME"
 mkdir -p "$MACOS_DIR"
+mkdir -p "$RESOURCES_DIR"
 
 # Copy executable
 cp .build/release/SpotifydUI "$MACOS_DIR/"
+
+# Copy icon
+cp Resources/AppIcon.icns "$RESOURCES_DIR/"
 
 # Create Info.plist
 cat > "$BUNDLE_DIR/Info.plist" << 'EOF'
@@ -38,6 +43,8 @@ cat > "$BUNDLE_DIR/Info.plist" << 'EOF'
     <string>1.0</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>LSUIElement</key>
     <true/>
     <key>CFBundleURLTypes</key>

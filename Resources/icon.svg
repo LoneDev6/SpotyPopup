@@ -1,0 +1,22 @@
+<svg width="1024" height="1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="1024" height="1024" rx="230" fill="#1DB954"/>
+
+  <!-- Spotify-style circular waves -->
+  <g transform="translate(512, 512)">
+    <!-- Top wave -->
+    <path d="M -280 -100 Q -140 -140, 0 -100 Q 140 -60, 280 -100"
+          stroke="white" stroke-width="35" fill="none" stroke-linecap="round"/>
+
+    <!-- Middle wave -->
+    <path d="M -230 0 Q -115 -30, 0 0 Q 115 30, 230 0"
+          stroke="white" stroke-width="35" fill="none" stroke-linecap="round"/>
+
+    <!-- Bottom wave -->
+    <path d="M -180 100 Q -90 80, 0 100 Q 90 120, 180 100"
+          stroke="white" stroke-width="35" fill="none" stroke-linecap="round"/>
+  </g>
+
+  <!-- Daemon indicator dot -->
+  <circle cx="812" cy="212" r="80" fill="#FF5555" stroke="white" stroke-width="12"/>
+</svg>
