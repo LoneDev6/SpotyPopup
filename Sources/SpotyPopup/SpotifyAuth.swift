@@ -6,7 +6,7 @@ class SpotifyAuth: ObservableObject {
     @Published var isAuthenticated = false
     @Published var accessToken: String?
 
-    private let clientID = SpotifyConfig.clientID
+    private var clientID: String
     private let redirectURI = SpotifyConfig.redirectURI
     private let scope = "user-read-playback-state user-modify-playback-state playlist-read-private playlist-read-collaborative user-library-read playlist-modify-public playlist-modify-private"
 
@@ -14,6 +14,18 @@ class SpotifyAuth: ObservableObject {
     private var codeChallenge: String?
     private var refreshToken: String?
     private var tokenExpiresAt: Date?
+
+    init() {
+        if let savedClientID = UserDefaults.standard.string(forKey: "spotify_client_id"), !savedClientID.isEmpty {
+            self.clientID = savedClientID
+        } else {
+            self.clientID = SpotifyConfig.clientID
+        }
+    }
+
+    func setClientID(_ clientID: String) {
+        self.clientID = clientID
+    }
 
     func authenticate() {
         generatePKCECodes()

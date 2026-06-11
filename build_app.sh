@@ -21,9 +21,11 @@ mkdir -p "$RESOURCES_DIR"
 
 # Copy executable
 cp .build/release/SpotyPopup "$MACOS_DIR/"
+chmod +x "$MACOS_DIR/SpotyPopup"
 
-# Copy icon
+# Copy icons
 cp Resources/AppIcon.icns "$RESOURCES_DIR/"
+cp Resources/AppIcon_login.png "$RESOURCES_DIR/"
 
 # Create Info.plist
 cat > "$BUNDLE_DIR/Info.plist" << 'EOF'
@@ -63,6 +65,9 @@ cat > "$BUNDLE_DIR/Info.plist" << 'EOF'
 EOF
 
 echo "✅ App bundle created: $APP_NAME"
+echo ""
+echo "🔏 Signing app bundle..."
+codesign --force --deep --sign - --options runtime "$APP_NAME"
 echo ""
 echo "🚀 Starting SpotyPopup..."
 open "$APP_NAME"

@@ -9,6 +9,9 @@ class MenuView: NSView {
     private let loginView = NSView()
     private let loginIconView = NSImageView()
     private let loginLabel = NSTextField(labelWithString: "Not authenticated")
+    private let clientIDField = NSTextField()
+    private let clientIDLabel = NSTextField(labelWithString: "Client ID:")
+    private let guideLink = NSButton()
     private let loginButton = NSButton()
     private let quitButton = NSButton()
 
@@ -82,13 +85,43 @@ class MenuView: NSView {
     private func setupLoginView() {
         loginView.wantsLayer = true
 
-        loginIconView.image = NSImage(systemSymbolName: "music.note", accessibilityDescription: nil)
-        loginIconView.contentTintColor = .secondaryLabelColor
+        if let iconPath = Bundle.main.resourcePath?.appending("/AppIcon_login.png"),
+           let iconImage = NSImage(contentsOfFile: iconPath) {
+            loginIconView.image = iconImage
+            loginIconView.imageScaling = .scaleProportionallyUpOrDown
+        }
         loginView.addSubview(loginIconView)
 
         loginLabel.font = NSFont.systemFont(ofSize: 16, weight: .semibold)
         loginLabel.alignment = .center
         loginView.addSubview(loginLabel)
+
+        clientIDLabel.font = NSFont.systemFont(ofSize: 13)
+        clientIDLabel.alignment = .left
+        loginView.addSubview(clientIDLabel)
+
+        clientIDField.placeholderString = "Enter your Spotify Client ID"
+        clientIDField.isBordered = true
+        clientIDField.bezelStyle = .roundedBezel
+        if let savedClientID = UserDefaults.standard.string(forKey: "spotify_client_id") {
+            clientIDField.stringValue = savedClientID
+        }
+        loginView.addSubview(clientIDField)
+
+        guideLink.title = "How to get Client ID?"
+        guideLink.bezelStyle = .inline
+        guideLink.isBordered = false
+        guideLink.target = self
+        guideLink.action = #selector(guideLinkTapped)
+        guideLink.attributedTitle = NSAttributedString(
+            string: "How to get Client ID?",
+            attributes: [
+                .foregroundColor: NSColor.linkColor,
+                .underlineStyle: NSUnderlineStyle.single.rawValue,
+                .font: NSFont.systemFont(ofSize: 12)
+            ]
+        )
+        loginView.addSubview(guideLink)
 
         loginButton.title = "Login with Spotify"
         loginButton.bezelStyle = .rounded
@@ -271,10 +304,13 @@ class MenuView: NSView {
         // Login view
         if !loginView.isHidden {
             loginView.frame = bounds
-            loginIconView.frame = NSRect(x: (bounds.width - 40) / 2, y: bounds.height / 2 + 60, width: 40, height: 40)
-            loginLabel.frame = NSRect(x: 40, y: bounds.height / 2 + 20, width: bounds.width - 80, height: 24)
-            loginButton.frame = NSRect(x: (bounds.width - 200) / 2, y: bounds.height / 2 - 20, width: 200, height: 32)
-            quitButton.frame = NSRect(x: (bounds.width - 200) / 2, y: bounds.height / 2 - 60, width: 200, height: 32)
+            loginIconView.frame = NSRect(x: (bounds.width - 40) / 2, y: bounds.height / 2 + 100, width: 40, height: 40)
+            loginLabel.frame = NSRect(x: 40, y: bounds.height / 2 + 60, width: bounds.width - 80, height: 24)
+            clientIDLabel.frame = NSRect(x: 40, y: bounds.height / 2 + 30, width: bounds.width - 80, height: 18)
+            clientIDField.frame = NSRect(x: 40, y: bounds.height / 2, width: bounds.width - 80, height: 24)
+            guideLink.frame = NSRect(x: 40, y: bounds.height / 2 - 25, width: bounds.width - 80, height: 20)
+            loginButton.frame = NSRect(x: (bounds.width - 200) / 2, y: bounds.height / 2 - 60, width: 200, height: 32)
+            quitButton.frame = NSRect(x: (bounds.width - 200) / 2, y: bounds.height / 2 - 100, width: 200, height: 32)
         }
 
         // Header bar
@@ -304,9 +340,10 @@ class MenuView: NSView {
             playbackView.frame = NSRect(x: 0, y: 48, width: bounds.width, height: bounds.height - 48)
 
             let pbHeight = playbackView.bounds.height
-            var yPos = pbHeight - 12
+            let topMargin: CGFloat = 20
+            var yPos = pbHeight - topMargin
 
-            // Album art at top
+            // Album art at top with consistent margins
             yPos -= 240
             albumArtView.frame = NSRect(x: 40, y: yPos, width: 240, height: 240)
 
@@ -505,7 +542,27 @@ class MenuView: NSView {
     // MARK: - Actions
 
     @objc private func loginButtonTapped() {
+        let clientID = clientIDField.stringValue.trimmingCharacters(in: .whitespaces)
+
+        guard !clientID.isEmpty else {
+            let alert = NSAlert()
+            alert.messageText = "Client ID Required"
+            alert.informativeText = "Please enter your Spotify Client ID"
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+            return
+        }
+
+        UserDefaults.standard.set(clientID, forKey: "spotify_client_id")
+        auth.setClientID(clientID)
         auth.authenticate()
+    }
+
+    @objc private func guideLinkTapped() {
+        if let url = URL(string: "https://github.com/LoneDev6/SpotyPopup/blob/main/SETUP_GUIDE.md") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     @objc private func quitButtonTapped() {
@@ -558,8 +615,14 @@ class MenuView: NSView {
     }
 
     @objc private func playPauseButtonTapped() {
+        // Immediately flip icon for instant feedback
+        let wasPlaying = api.currentPlayback?.isPlaying == true
+        let newIcon = wasPlaying ? "play.circle.fill" : "pause.circle.fill"
+        let config = NSImage.SymbolConfiguration(pointSize: 48, weight: .regular)
+        playPauseButton.image = NSImage(systemSymbolName: newIcon, accessibilityDescription: nil)?.withSymbolConfiguration(config)
+
         Task {
-            if api.currentPlayback?.isPlaying == true {
+            if wasPlaying {
                 await api.pause()
             } else {
                 await api.play()

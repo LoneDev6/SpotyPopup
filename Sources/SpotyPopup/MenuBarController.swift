@@ -1,6 +1,7 @@
 import AppKit
 import MediaPlayer
 import Combine
+import ApplicationServices
 
 class MenuBarController: NSObject, NSPopoverDelegate {
     private var statusItem: NSStatusItem!
@@ -10,6 +11,8 @@ class MenuBarController: NSObject, NSPopoverDelegate {
     private var timer: Timer?
     private var isPopoverOpen = false
     private var statusBarView: StatusBarView?
+    private var eventMonitor: Any?
+    private var positionUpdateTimer: Timer?
 
     override init() {
         super.init()
@@ -141,6 +144,7 @@ class MenuBarController: NSObject, NSPopoverDelegate {
         popover = NSPopover()
         popover.contentSize = NSSize(width: 320, height: 480)
         popover.behavior = .transient
+        popover.animates = true
         popover.delegate = self
     }
 
@@ -168,10 +172,18 @@ class MenuBarController: NSObject, NSPopoverDelegate {
     }
 
     private func openPopover(relativeTo button: NSButton) {
+        print("🔍 openPopover called")
         refreshPopoverContent()
+        print("🔍 Showing popover")
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         isPopoverOpen = true
+        print("🔍 Starting polling")
         startPolling()
+        print("🔍 Starting event monitor")
+        startEventMonitor()
+        print("🔍 Starting position update timer")
+        startPositionUpdateTimer()
+        print("🔍 Fetching playback")
         Task {
             await api.fetchCurrentPlayback()
         }
@@ -179,7 +191,9 @@ class MenuBarController: NSObject, NSPopoverDelegate {
 
     private func closePopover() {
         isPopoverOpen = false
-        popover.contentViewController = nil  // Destroy SwiftUI view FIRST
+        stopEventMonitor()
+        stopPositionUpdateTimer()
+        popover.contentViewController = nil
         popover.performClose(nil)
         startPolling() // Resume background polling at slower rate
     }
@@ -188,7 +202,9 @@ class MenuBarController: NSObject, NSPopoverDelegate {
 
     func popoverDidClose(_ notification: Notification) {
         isPopoverOpen = false
-        popover.contentViewController = nil  // Ensure cleanup
+        stopEventMonitor()
+        stopPositionUpdateTimer()
+        popover.contentViewController = nil
         startPolling() // Resume background polling at slower rate
     }
 
@@ -303,6 +319,121 @@ class MenuBarController: NSObject, NSPopoverDelegate {
                 await self?.api.previousTrack()
             }
             return .success
+        }
+    }
+
+    // MARK: - Event Monitor
+
+    private func startEventMonitor() {
+        eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            if self?.isPopoverOpen == true {
+                self?.closePopover()
+            }
+        }
+    }
+
+    private func stopEventMonitor() {
+        if let monitor = eventMonitor {
+            NSEvent.removeMonitor(monitor)
+            eventMonitor = nil
+        }
+    }
+
+    // MARK: - Fullscreen Detection
+
+    private func isFrontmostAppFullscreen() -> Bool {
+        guard let app = NSWorkspace.shared.frontmostApplication else {
+            return false
+        }
+
+        // Get all windows
+        guard let windowList = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
+            return false
+        }
+
+        // Find frontmost app window
+        for windowInfo in windowList {
+            guard let ownerPID = windowInfo[kCGWindowOwnerPID as String] as? Int32,
+                  ownerPID == app.processIdentifier,
+                  let boundsDict = windowInfo[kCGWindowBounds as String] as? [String: CGFloat],
+                  let windowLayer = windowInfo[kCGWindowLayer as String] as? Int32,
+                  windowLayer == 0 else {
+                continue
+            }
+
+            let y = boundsDict["Y"] ?? 0
+            let width = boundsDict["Width"] ?? 0
+            let height = boundsDict["Height"] ?? 0
+
+            // Check if window covers most of screen (allowing for menu bar)
+            if let screen = NSScreen.main {
+                let screenFrame = screen.frame
+                let isFullWidth = width >= screenFrame.width - 10
+                let isFullHeight = height >= screenFrame.height - 50
+                let isAtTop = y <= 50
+
+                if isFullWidth && isFullHeight && isAtTop {
+                    return true
+                }
+            }
+        }
+
+        return false
+    }
+
+    // MARK: - Position Update
+
+    private func startPositionUpdateTimer() {
+        print("🔍 startPositionUpdateTimer called")
+        positionUpdateTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+            self?.updatePopoverPosition()
+        }
+        print("🔍 Timer started: \(positionUpdateTimer != nil)")
+    }
+
+    private func stopPositionUpdateTimer() {
+        positionUpdateTimer?.invalidate()
+        positionUpdateTimer = nil
+    }
+
+    private func updatePopoverPosition() {
+        print("🔍 updatePopoverPosition called")
+
+        guard isPopoverOpen else {
+            print("🔍 Popover not open")
+            return
+        }
+
+        guard let button = statusItem.button else {
+            print("🔍 No button")
+            return
+        }
+
+        guard let window = button.window else {
+            print("🔍 No window")
+            return
+        }
+
+        guard let popoverWindow = popover.contentViewController?.view.window else {
+            print("🔍 No popover window")
+            return
+        }
+
+        print("🔍 All guards passed, checking fullscreen")
+        let isFrontAppFullscreen = isFrontmostAppFullscreen()
+
+        let buttonFrame = button.convert(button.bounds, to: nil)
+        let buttonScreenFrame = window.convertToScreen(buttonFrame)
+
+        // Add offset when frontmost app is fullscreen
+        let yOffset: CGFloat = isFrontAppFullscreen ? 30 : 0
+        let targetY = buttonScreenFrame.minY - popoverWindow.frame.height - yOffset
+
+        // Only update if position changed significantly
+        if abs(popoverWindow.frame.origin.y - targetY) > 2 {
+            var frame = popoverWindow.frame
+            frame.origin.y = targetY
+            popoverWindow.setFrame(frame, display: false, animate: true)
         }
     }
 }
