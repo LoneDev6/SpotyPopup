@@ -1,80 +1,84 @@
-# Setup Completo SpotyPopup
+# Complete SpotyPopup Setup
 
-## Passo 1: Crea Spotify App
+## Step 1: Create a Spotify App
 
-1. Vai su https://developer.spotify.com/dashboard
-2. Fai login con il tuo account Spotify
-3. Clicca **"Create app"**
-4. Compila:
+1. Go to https://developer.spotify.com/dashboard
+2. Sign in with your Spotify account
+3. Click **"Create app"**
+4. Fill in:
    - **App name**: `SpotyPopup`
    - **App description**: `Menu bar controller for spotifyd`
-   - **Redirect URI**: `spotypopup://callback` ⚠️ IMPORTANTE (custom URL scheme, non http)
+   - **Redirect URI**: `spotypopup://callback` ⚠️ IMPORTANT (custom URL scheme, not HTTP)
    - **Which API/SDKs are you planning to use?**: Web API
-5. Accetta i termini e clicca **"Save"**
-6. Nella pagina dell'app, clicca **"Settings"**
-7. Copia il **Client ID** (il Client Secret non serve più grazie a PKCE!)
+5. Accept the terms and click **"Save"**
+6. On the app page, click **"Settings"**
+7. Copy the **Client ID** (the Client Secret is no longer required thanks to PKCE!)
 
-## Passo 2: Configura il Client ID
+## Step 2: Configure the Client ID
 
-Apri `Sources/SpotyPopup/SpotifyAuth.swift` e modifica:
+Open `Sources/SpotyPopup/SpotifyAuth.swift` and edit:
 
-**Riga 8:**
+**Line 8:**
 ```swift
-private let clientID = "metti_qui_il_client_id"
-```
+private let clientID = "paste_your_client_id_here"
+````
 
-**Nota**: Non serve più il client secret! L'app usa PKCE (Proof Key for Code Exchange), che è lo standard sicuro per app native pubbliche.
+**Note**: A client secret is no longer required. The app uses PKCE (Proof Key for Code Exchange), which is the secure standard for public native applications.
 
-## Passo 3: Verifica spotifyd
+## Step 3: Verify spotifyd
 
-Assicurati che spotifyd sia in esecuzione:
+Make sure spotifyd is running:
 
 ```bash
-# Verifica se è attivo
+# Check if it's running
 ps aux | grep spotifyd
 
-# Se non è attivo, avvialo
+# If it's not running, start it
 spotifyd --no-daemon --backend portaudio
 ```
 
-## Passo 4: Build e avvio
+## Step 4: Build and Launch
 
-**Per far funzionare l'autenticazione devi creare l'app bundle:**
+**To make authentication work, you must create the app bundle:**
 
 ```bash
 ./build_app.sh
 open SpotyPopup.app
 ```
 
-Lo script crea `SpotyPopup.app` con l'Info.plist che registra il custom URL scheme `spotypopup://`.
+The script creates `SpotyPopup.app` with an Info.plist that registers the custom URL scheme `spotypopup://`.
 
-**Per debug veloce (senza autenticazione funzionante):**
+**For quick debugging (authentication will not work):**
+
 ```bash
 swift run
 ```
 
-## Primo utilizzo
+## First Use
 
-1. Apparirà un'icona musicale nella menu bar (in alto a destra)
-2. Cliccala
-3. Clicca **"Login with Spotify"**
-4. Si aprirà il browser → autorizza l'app
-5. Torna all'app (dovrebbe autenticarsi automaticamente)
-6. Avvia musica su Spotify (da qualsiasi client)
-7. L'app mostrerà la copertina e i controlli
+1. A music icon will appear in the menu bar (top-right corner)
+2. Click it
+3. Click **"Login with Spotify"**
+4. Your browser will open → authorize the app
+5. Return to the app (it should authenticate automatically)
+6. Start playing music on Spotify (from any client)
+7. The app will display the album artwork and playback controls
 
 ## Troubleshooting
 
-**"No active playback"**: 
-- Verifica che spotifyd sia in esecuzione
-- Avvia la riproduzione da Spotify web/mobile/desktop
-- Seleziona spotifyd come dispositivo di output
+### "No active playback"
 
-**"Not authenticated" dopo il login**:
-- Controlla che il redirect URI sia esattamente `spotypopup://callback`
-- Verifica Client ID e Secret in `SpotifyAuth.swift`
-- Se usi Xcode, assicurati che l'Info.plist sia incluso nel bundle
+* Make sure spotifyd is running
+* Start playback from Spotify Web, Mobile, or Desktop
+* Select spotifyd as the playback device
 
-**Errori di build**:
-- Richiede macOS 13+ e Swift 5.9+
-- Prova `swift --version` per verificare
+### "Not authenticated" after login
+
+* Ensure the redirect URI is exactly `spotypopup://callback`
+* Verify the Client ID in `SpotifyAuth.swift`
+* If you're using Xcode, make sure the Info.plist is included in the app bundle
+
+### Build errors
+
+* Requires macOS 13+ and Swift 5.9+
+* Run `swift --version` to verify your Swift installation
