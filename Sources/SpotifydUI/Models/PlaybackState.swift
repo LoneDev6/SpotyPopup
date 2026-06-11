@@ -5,6 +5,7 @@ struct PlaybackState: Codable {
     let item: Track?
     let device: Device?
     let shuffleState: Bool?
+    let progressMs: Int
 
     struct Device: Codable {
         let name: String
@@ -16,5 +17,6 @@ struct PlaybackState: Codable {
         case item
         case device
         case shuffleState = "shuffle_state"
+        case progressMs = "progress_ms"
     }
 }

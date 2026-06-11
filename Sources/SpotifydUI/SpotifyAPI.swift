@@ -9,6 +9,7 @@ class SpotifyAPI: ObservableObject {
     @Published var lastError: String?
     @Published var tracksError: String?
     @Published var isShuffleOn = false
+    @Published var availableDevices: [Device] = []
 
     private let baseURL = "https://api.spotify.com/v1"
     private var accessToken: String?
@@ -346,4 +347,89 @@ class SpotifyAPI: ObservableObject {
             }
         }
     }
+
+    func setVolume(_ volume: Int) async {
+        guard let token = accessToken else { return }
+
+        let clampedVolume = max(0, min(100, volume))
+        var request = URLRequest(url: URL(string: "\(baseURL)/me/player/volume?volume_percent=\(clampedVolume)")!)
+        request.httpMethod = "PUT"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        do {
+            _ = try await URLSession.shared.data(for: request)
+        } catch {
+            print("Failed to set volume: \(error)")
+        }
+    }
+
+    func seekToPosition(_ positionMs: Int) async {
+        guard let token = accessToken else { return }
+
+        var request = URLRequest(url: URL(string: "\(baseURL)/me/player/seek?position_ms=\(positionMs)")!)
+        request.httpMethod = "PUT"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        do {
+            _ = try await URLSession.shared.data(for: request)
+        } catch {
+            print("Failed to seek: \(error)")
+        }
+    }
+
+    func fetchAvailableDevices() async {
+        guard let token = accessToken else { return }
+
+        var request = URLRequest(url: URL(string: "\(baseURL)/me/player/devices")!)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        do {
+            let (data, _) = try await URLSession.shared.data(for: request)
+            let response = try JSONDecoder().decode(DevicesResponse.self, from: data)
+            DispatchQueue.main.async {
+                self.availableDevices = response.devices
+            }
+        } catch {
+            print("Failed to fetch devices: \(error)")
+        }
+    }
+
+    func transferPlayback(to deviceId: String) async {
+        guard let token = accessToken else { return }
+
+        var request = URLRequest(url: URL(string: "\(baseURL)/me/player")!)
+        request.httpMethod = "PUT"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: Any] = [
+            "device_ids": [deviceId],
+            "play": true
+        ]
+
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            _ = try await URLSession.shared.data(for: request)
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            await fetchCurrentPlayback()
+        } catch {
+            print("Failed to transfer playback: \(error)")
+        }
+    }
+}
+
+struct Device: Codable, Identifiable {
+    let id: String
+    let name: String
+    let type: String
+    let isActive: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, type
+        case isActive = "is_active"
+    }
+}
+
+struct DevicesResponse: Codable {
+    let devices: [Device]
 }

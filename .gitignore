@@ -8,3 +8,4 @@ DerivedData/
 .netrc
 *.xcodeproj
 SpotifydUI.app/
+graphify-out/
