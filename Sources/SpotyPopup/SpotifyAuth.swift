@@ -14,6 +14,7 @@ class SpotifyAuth: ObservableObject {
     private var codeChallenge: String?
     private var refreshToken: String?
     private var tokenExpiresAt: Date?
+    private var refreshTask: Task<Bool, Never>?
 
     init() {
         if let savedClientID = UserDefaults.standard.string(forKey: "spotify_client_id"), !savedClientID.isEmpty {
@@ -98,10 +99,7 @@ class SpotifyAuth: ObservableObject {
             "code_verifier": verifier
         ]
 
-        request.httpBody = bodyParams
-            .map { "\($0.key)=\($0.value)" }
-            .joined(separator: "&")
-            .data(using: .utf8)
+        request.httpBody = formEncodedBody(bodyParams)
 
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             guard let data = data else {
@@ -156,10 +154,26 @@ class SpotifyAuth: ObservableObject {
         }
     }
 
-    func refreshAccessToken() async {
+    @discardableResult
+    func refreshAccessToken() async -> Bool {
+        if let refreshTask {
+            return await refreshTask.value
+        }
+
+        let task = Task { [weak self] in
+            await self?.performTokenRefresh() ?? false
+        }
+        refreshTask = task
+        let didRefresh = await task.value
+        refreshTask = nil
+
+        return didRefresh
+    }
+
+    private func performTokenRefresh() async -> Bool {
         guard let refresh = refreshToken else {
             AppLogger.error("No refresh token available", category: AppLogger.auth)
-            return
+            return false
         }
 
         var request = URLRequest(url: URL(string: "https://accounts.spotify.com/api/token")!)
@@ -172,31 +186,38 @@ class SpotifyAuth: ObservableObject {
             "client_id": clientID
         ]
 
-        request.httpBody = bodyParams
-            .map { "\($0.key)=\($0.value)" }
-            .joined(separator: "&")
-            .data(using: .utf8)
+        request.httpBody = formEncodedBody(bodyParams)
 
         do {
-            let (data, _) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
 
             if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let token = json["access_token"] as? String {
                 let expiresIn = json["expires_in"] as? Int ?? 3600
+                let newRefreshToken = json["refresh_token"] as? String ?? refresh
 
                 await MainActor.run {
                     self.accessToken = token
+                    self.refreshToken = newRefreshToken
                     self.tokenExpiresAt = Date().addingTimeInterval(TimeInterval(expiresIn))
-                    self.saveTokens(accessToken: token, refreshToken: refresh, expiresAt: self.tokenExpiresAt)
+                    self.saveTokens(accessToken: token, refreshToken: newRefreshToken, expiresAt: self.tokenExpiresAt)
                 }
+                return true
             } else {
-                AppLogger.error("Token refresh failed, need to re-authenticate", category: AppLogger.auth)
-                await MainActor.run {
-                    self.logout()
+                let errorString = String(data: data, encoding: .utf8) ?? "No error details"
+                AppLogger.error("Token refresh failed (\(statusCode)): \(errorString)", category: AppLogger.auth)
+
+                if statusCode == 400 || statusCode == 401 {
+                    await MainActor.run {
+                        self.logout()
+                    }
                 }
+                return false
             }
         } catch {
             AppLogger.error("Token refresh error: \(error)", category: AppLogger.auth)
+            return false
         }
     }
 
@@ -209,5 +230,21 @@ class SpotifyAuth: ObservableObject {
         tokenExpiresAt = nil
         isAuthenticated = false
     }
+
+    private func formEncodedBody(_ params: [String: String]) -> Data? {
+        params
+            .map { key, value in
+                "\(key.spotifyFormEncoded)=\(value.spotifyFormEncoded)"
+            }
+            .joined(separator: "&")
+            .data(using: .utf8)
+    }
 }
 
+private extension String {
+    var spotifyFormEncoded: String {
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "&+=?")
+        return addingPercentEncoding(withAllowedCharacters: allowed) ?? self
+    }
+}
