@@ -6,13 +6,17 @@ import ApplicationServices
 class MenuBarController: NSObject, NSPopoverDelegate {
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
+    private var browserPopover: NSPopover!
+    private let spotifyWebView = SpotifyWebPlayerView(frame: NSRect(x: 0, y: 0, width: 1280, height: 820))
     private let api = SpotifyAPI()
     private let auth = SpotifyAuth()
     private var timer: Timer?
     private var isPopoverOpen = false
+    private var isBrowserPopoverOpen = false
     private var statusBarView: StatusBarView?
     private var eventMonitor: Any?
     private var positionUpdateTimer: Timer?
+    private var pendingWebCloseWorkItem: DispatchWorkItem?
 
     override init() {
         super.init()
@@ -109,8 +113,9 @@ class MenuBarController: NSObject, NSPopoverDelegate {
         quitItem.target = self
         menu.addItem(quitItem)
 
-        if isPopoverOpen {
+        if isPopoverOpen || isBrowserPopoverOpen {
             closePopover()
+            closeBrowserPopover(applyMemoryPolicy: true)
         }
 
         NSMenu.popUpContextMenu(menu, with: event, for: statusBarView)
@@ -120,6 +125,9 @@ class MenuBarController: NSObject, NSPopoverDelegate {
         guard let button = statusItem.button else { return }
         if isPopoverOpen {
             closePopover()
+        }
+        if isBrowserPopoverOpen {
+            closeBrowserPopover(applyMemoryPolicy: true)
         }
         openSettingsPopover(relativeTo: button)
     }
@@ -184,6 +192,20 @@ class MenuBarController: NSObject, NSPopoverDelegate {
         popover.behavior = .transient
         popover.animates = true
         popover.delegate = self
+
+        spotifyWebView.onBack = { [weak self] in
+            self?.closeBrowserPopover(applyMemoryPolicy: true)
+        }
+
+        let browserViewController = NSViewController()
+        browserViewController.view = spotifyWebView
+
+        browserPopover = NSPopover()
+        browserPopover.contentSize = NSSize(width: 1280, height: 820)
+        browserPopover.behavior = .transient
+        browserPopover.animates = true
+        browserPopover.delegate = self
+        browserPopover.contentViewController = browserViewController
     }
 
     private func refreshPopoverContent() {
@@ -191,8 +213,8 @@ class MenuBarController: NSObject, NSPopoverDelegate {
         let menuView = MenuView(
             api: api,
             auth: auth,
-            onPreferredSizeChange: { [weak self] size in
-                self?.setPopoverContentSize(size, animated: true)
+            onOpenSpotifyWeb: { [weak self] url in
+                self?.openBrowserPopover(url: url)
             }
         )
         let viewController = NSViewController()
@@ -200,14 +222,16 @@ class MenuBarController: NSObject, NSPopoverDelegate {
         popover.contentViewController = viewController
     }
 
-    private func setPopoverContentSize(_ size: NSSize, animated: Bool) {
+    private func setPopoverContentSize(_ size: NSSize, animated: Bool, completion: (() -> Void)? = nil) {
         guard animated else {
             popover.contentSize = size
+            completion?()
             return
         }
 
         guard let window = popover.contentViewController?.view.window else {
             popover.contentSize = size
+            completion?()
             return
         }
 
@@ -226,12 +250,19 @@ class MenuBarController: NSObject, NSPopoverDelegate {
             context.allowsImplicitAnimation = true
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             window.animator().setFrame(targetFrame, display: true)
+        } completionHandler: {
+            self.popover.contentSize = size
+            self.popover.contentViewController?.view.setFrameSize(size)
+            self.popover.contentViewController?.view.layoutSubtreeIfNeeded()
+            completion?()
         }
     }
 
     @objc private func togglePopover() {
         if let button = statusItem.button {
-            if isPopoverOpen {
+            if isBrowserPopoverOpen {
+                closeBrowserPopover(applyMemoryPolicy: true)
+            } else if isPopoverOpen {
                 closePopover()
             } else {
                 openPopover(relativeTo: button)
@@ -286,6 +317,73 @@ class MenuBarController: NSObject, NSPopoverDelegate {
         startPositionUpdateTimer()
     }
 
+    private func openBrowserPopover(url: URL?) {
+        guard let button = statusItem.button else { return }
+
+        if isPopoverOpen {
+            closePopover()
+        }
+
+        pendingWebCloseWorkItem?.cancel()
+        pendingWebCloseWorkItem = nil
+        spotifyWebView.prepareForPresentation()
+
+        browserPopover.contentSize = NSSize(width: 1280, height: 820)
+        browserPopover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+
+        if let window = browserPopover.contentViewController?.view.window {
+            window.isOpaque = false
+            window.backgroundColor = .clear
+        }
+
+        isPopoverOpen = true
+        isBrowserPopoverOpen = true
+        startPolling()
+        startEventMonitor()
+        startPositionUpdateTimer()
+
+        browserPopover.contentViewController?.view.layoutSubtreeIfNeeded()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { [weak self] in
+            self?.spotifyWebView.finishPresentation()
+        }
+
+        if let url {
+            spotifyWebView.open(url)
+        } else {
+            spotifyWebView.open()
+        }
+    }
+
+    private func closeBrowserPopover(applyMemoryPolicy: Bool) {
+        guard isBrowserPopoverOpen else { return }
+
+        if applyMemoryPolicy {
+            spotifyWebView.capturePreview()
+            pendingWebCloseWorkItem?.cancel()
+
+            switch AppSettings.spotifyWebMemoryPolicy {
+            case .instant:
+                spotifyWebView.close()
+                pendingWebCloseWorkItem = nil
+            case .after30Seconds:
+                let workItem = DispatchWorkItem { [weak self] in
+                    self?.spotifyWebView.close()
+                }
+                pendingWebCloseWorkItem = workItem
+                DispatchQueue.main.asyncAfter(deadline: .now() + 30, execute: workItem)
+            case .never:
+                pendingWebCloseWorkItem = nil
+            }
+        }
+
+        isBrowserPopoverOpen = false
+        isPopoverOpen = false
+        stopEventMonitor()
+        stopPositionUpdateTimer()
+        browserPopover.performClose(nil)
+        startPolling()
+    }
+
     private func closePopover() {
         isPopoverOpen = false
         stopEventMonitor()
@@ -299,11 +397,26 @@ class MenuBarController: NSObject, NSPopoverDelegate {
     // MARK: - NSPopoverDelegate
 
     func popoverDidClose(_ notification: Notification) {
-        isPopoverOpen = false
-        stopEventMonitor()
-        stopPositionUpdateTimer()
-        popover.contentViewController = nil
-        startPolling() // Resume background polling at slower rate
+        guard let closedPopover = notification.object as? NSPopover else { return }
+
+        if closedPopover === browserPopover {
+            if isBrowserPopoverOpen {
+                closeBrowserPopover(applyMemoryPolicy: true)
+            }
+            return
+        }
+
+        if closedPopover === popover {
+            isPopoverOpen = isBrowserPopoverOpen
+            stopEventMonitor()
+            stopPositionUpdateTimer()
+            popover.contentViewController = nil
+            if isBrowserPopoverOpen {
+                startEventMonitor()
+                startPositionUpdateTimer()
+            }
+            startPolling() // Resume background polling at slower rate
+        }
     }
 
     private var lastPollingInterval: TimeInterval = 0
@@ -458,9 +571,13 @@ class MenuBarController: NSObject, NSPopoverDelegate {
     // MARK: - Event Monitor
 
     private func startEventMonitor() {
+        stopEventMonitor()
         eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
-            if self?.isPopoverOpen == true {
-                self?.closePopover()
+            guard let self else { return }
+            if self.isBrowserPopoverOpen {
+                self.closeBrowserPopover(applyMemoryPolicy: true)
+            } else if self.isPopoverOpen {
+                self.closePopover()
             }
         }
     }
@@ -547,7 +664,8 @@ class MenuBarController: NSObject, NSPopoverDelegate {
             return
         }
 
-        guard let popoverWindow = popover.contentViewController?.view.window else {
+        let activePopover = isBrowserPopoverOpen ? browserPopover : popover
+        guard let popoverWindow = activePopover?.contentViewController?.view.window else {
             print("🔍 No popover window")
             return
         }

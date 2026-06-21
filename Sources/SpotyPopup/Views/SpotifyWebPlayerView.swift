@@ -1,16 +1,20 @@
 import AppKit
+import CoreImage
 import WebKit
 
 final class SpotifyWebPlayerView: NSView, WKNavigationDelegate {
     private let topBar = NSVisualEffectView()
     private var webView: WKWebView?
     private let snapshotImageView = NSImageView()
+    private let loadingBlurView = NSVisualEffectView()
     private let loadingOverlay = NSView()
     private let loadingSpinner = NSProgressIndicator()
     private let backButton = NSButton()
     private let reloadButton = NSButton()
     private var didLoad = false
     private var readinessAttempt = 0
+    private var presentationReady = true
+    private var pendingRevealAfterPresentation = false
 
     var onBack: (() -> Void)?
 
@@ -35,9 +39,20 @@ final class SpotifyWebPlayerView: NSView, WKNavigationDelegate {
         snapshotImageView.imageScaling = .scaleAxesIndependently
         snapshotImageView.wantsLayer = true
         snapshotImageView.layer?.backgroundColor = NSColor.black.cgColor
+        snapshotImageView.layer?.masksToBounds = true
+        if let blurFilter = CIFilter(name: "CIGaussianBlur") {
+            blurFilter.setValue(14, forKey: kCIInputRadiusKey)
+            snapshotImageView.layer?.filters = [blurFilter]
+        }
         snapshotImageView.image = loadSnapshotFromDisk()
         snapshotImageView.isHidden = true
         addSubview(snapshotImageView)
+
+        loadingBlurView.material = .hudWindow
+        loadingBlurView.blendingMode = .withinWindow
+        loadingBlurView.state = .active
+        loadingBlurView.isHidden = true
+        addSubview(loadingBlurView)
 
         loadingOverlay.wantsLayer = true
         loadingOverlay.layer?.backgroundColor = NSColor.black.cgColor
@@ -83,6 +98,7 @@ final class SpotifyWebPlayerView: NSView, WKNavigationDelegate {
         let contentFrame = NSRect(x: 0, y: 0, width: bounds.width, height: max(0, bounds.height - topBarHeight))
         webView?.frame = contentFrame
         snapshotImageView.frame = contentFrame
+        loadingBlurView.frame = contentFrame
         loadingOverlay.frame = contentFrame
         loadingSpinner.frame = NSRect(
             x: (loadingOverlay.bounds.width - 24) / 2,
@@ -96,9 +112,7 @@ final class SpotifyWebPlayerView: NSView, WKNavigationDelegate {
 
     func open() {
         if didLoad {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) { [weak self] in
-                self?.revealLoadedPage()
-            }
+            revealLoadedPage()
             return
         }
 
@@ -112,10 +126,23 @@ final class SpotifyWebPlayerView: NSView, WKNavigationDelegate {
             snapshotImageView.image = loadSnapshotFromDisk()
         }
 
+        presentationReady = false
+        pendingRevealAfterPresentation = false
+        webView?.isHidden = true
         snapshotImageView.alphaValue = 1
         snapshotImageView.isHidden = snapshotImageView.image == nil
+        loadingBlurView.isHidden = true
         loadingOverlay.isHidden = true
         loadingSpinner.stopAnimation(nil)
+    }
+
+    func finishPresentation() {
+        presentationReady = true
+
+        if pendingRevealAfterPresentation {
+            pendingRevealAfterPresentation = false
+            revealLoadedPage()
+        }
     }
 
     func capturePreview() {
@@ -142,6 +169,7 @@ final class SpotifyWebPlayerView: NSView, WKNavigationDelegate {
 
         saveCurrentURL(from: webView)
         captureSnapshotThenDestroy(webView)
+        loadingBlurView.isHidden = snapshotImageView.image == nil
         loadingOverlay.isHidden = false
         loadingSpinner.startAnimation(nil)
         didLoad = false
@@ -191,10 +219,12 @@ final class SpotifyWebPlayerView: NSView, WKNavigationDelegate {
 
     private func showLoading() {
         webView?.isHidden = true
-        snapshotImageView.isHidden = snapshotImageView.image == nil
-        loadingOverlay.layer?.backgroundColor = (snapshotImageView.image == nil
-            ? NSColor.black
-            : NSColor.black.withAlphaComponent(0.35)).cgColor
+        let hasSnapshot = snapshotImageView.image != nil
+        snapshotImageView.isHidden = !hasSnapshot
+        loadingBlurView.isHidden = !hasSnapshot
+        loadingOverlay.layer?.backgroundColor = (hasSnapshot
+            ? NSColor.black.withAlphaComponent(0.68)
+            : NSColor.black).cgColor
         loadingOverlay.isHidden = false
         loadingSpinner.startAnimation(nil)
     }
@@ -204,9 +234,15 @@ final class SpotifyWebPlayerView: NSView, WKNavigationDelegate {
     }
 
     private func revealLoadedPage() {
+        guard presentationReady else {
+            pendingRevealAfterPresentation = true
+            return
+        }
+
         webView?.isHidden = false
         loadingSpinner.stopAnimation(nil)
         loadingOverlay.isHidden = true
+        loadingBlurView.isHidden = true
 
         guard snapshotImageView.isHidden == false else { return }
 

@@ -3,7 +3,7 @@ import AppKit
 class MenuView: NSView {
     private let api: SpotifyAPI
     private let auth: SpotifyAuth
-    var onPreferredSizeChange: ((NSSize) -> Void)?
+    var onOpenSpotifyWeb: ((URL?) -> Void)?
     private let backgroundEffectView = NSVisualEffectView()
 
     // Login view
@@ -47,24 +47,23 @@ class MenuView: NSView {
     // Queue view
     private let queueView = QueueView()
 
-    // Spotify web player view
-    private let spotifyWebView = SpotifyWebPlayerView()
-
     private var showQueue = false
     private var showVolumeControl = false
     private var showDevices = false
-    private var showSpotifyWeb = false
 
     private var imageCache = [String: NSImage]()
-private var currentAlbumArtURL: String?
-private var lastTrackId: String?
-private var lastIsPlaying: Bool?
-private var pendingWebCloseWorkItem: DispatchWorkItem?
+    private var currentAlbumArtURL: String?
+    private var lastTrackId: String?
+    private var lastIsPlaying: Bool?
 
-    init(api: SpotifyAPI, auth: SpotifyAuth, onPreferredSizeChange: ((NSSize) -> Void)? = nil) {
+    init(
+        api: SpotifyAPI,
+        auth: SpotifyAuth,
+        onOpenSpotifyWeb: ((URL?) -> Void)? = nil
+    ) {
         self.api = api
         self.auth = auth
-        self.onPreferredSizeChange = onPreferredSizeChange
+        self.onOpenSpotifyWeb = onOpenSpotifyWeb
         super.init(frame: NSRect(x: 0, y: 0, width: 320, height: 480))
         setupViews()
         observeChanges()
@@ -91,7 +90,6 @@ private var pendingWebCloseWorkItem: DispatchWorkItem?
         setupNoPlaybackView()
         setupDevicesView()
         setupQueueView()
-        setupSpotifyWebView()
         setupWebPlayerButton()
     }
 
@@ -301,33 +299,6 @@ private var pendingWebCloseWorkItem: DispatchWorkItem?
         addSubview(queueView)
     }
 
-    private func setupSpotifyWebView() {
-        spotifyWebView.onBack = { [weak self] in
-            guard let self else { return }
-
-            self.spotifyWebView.capturePreview()
-            self.pendingWebCloseWorkItem?.cancel()
-
-            switch AppSettings.spotifyWebMemoryPolicy {
-            case .instant:
-                self.spotifyWebView.close()
-            case .after30Seconds:
-                let workItem = DispatchWorkItem { [weak self] in
-                    self?.spotifyWebView.close()
-                }
-                self.pendingWebCloseWorkItem = workItem
-                DispatchQueue.main.asyncAfter(deadline: .now() + 30, execute: workItem)
-            case .never:
-                break
-            }
-
-            self.showSpotifyWeb = false
-            self.onPreferredSizeChange?(NSSize(width: 320, height: 480))
-            self.updateVisibility()
-        }
-        addSubview(spotifyWebView)
-    }
-
     private func setupWebPlayerButton() {
         webPlayerButton.image = NSImage(systemSymbolName: "safari.fill", accessibilityDescription: nil)
         webPlayerButton.bezelStyle = .recessed
@@ -378,34 +349,32 @@ private var pendingWebCloseWorkItem: DispatchWorkItem?
             playbackView.frame = NSRect(x: 0, y: 48, width: bounds.width, height: bounds.height - 48)
 
             let pbHeight = playbackView.bounds.height
-            let topMargin: CGFloat = 20
-            var yPos = pbHeight - topMargin
+            let controlsY: CGFloat = 16
+            let progressBarHeight: CGFloat = 44
+            let progressBarY = controlsY + 58
+            let trackNameHeight: CGFloat = 22
+            let artistHeight: CGFloat = 18
+            let albumSize = min(240, max(170, pbHeight - 194))
+            let centerX = bounds.width / 2
+            var yPos = pbHeight - 20
 
             // Album art at top with consistent margins
-            yPos -= 240
-            albumArtView.frame = NSRect(x: 40, y: yPos, width: 240, height: 240)
+            yPos -= albumSize
+            albumArtView.frame = NSRect(x: (bounds.width - albumSize) / 2, y: yPos, width: albumSize, height: albumSize)
 
             // Track name below album
             yPos -= 12
-            let trackNameHeight: CGFloat = 22
             trackNameLabel.frame = NSRect(x: 20, y: yPos - trackNameHeight, width: bounds.width - 40, height: trackNameHeight)
             yPos -= trackNameHeight
 
             // Artist below track name (reduced gap)
             yPos -= 4
-            let artistHeight: CGFloat = 18
             artistLabel.frame = NSRect(x: 20, y: yPos - artistHeight, width: bounds.width - 40, height: artistHeight)
-            yPos -= artistHeight
 
-            // Progress bar below artist
-            yPos -= 12
-            let progressBarHeight: CGFloat = 50
-            progressBarView.frame = NSRect(x: 0, y: yPos - progressBarHeight, width: bounds.width, height: progressBarHeight)
+            // Progress bar stays above controls and never overlaps them.
+            progressBarView.frame = NSRect(x: 0, y: progressBarY, width: bounds.width, height: progressBarHeight)
 
             // Controls at bottom
-            let controlsY: CGFloat = 16
-            let centerX = bounds.width / 2
-
             playPauseButton.frame = NSRect(x: centerX - 24, y: controlsY, width: 48, height: 48)
             previousButton.frame = NSRect(x: centerX - 80, y: controlsY + 4, width: 40, height: 40)
             nextButton.frame = NSRect(x: centerX + 40, y: controlsY + 4, width: 40, height: 40)
@@ -428,11 +397,6 @@ private var pendingWebCloseWorkItem: DispatchWorkItem?
         // Queue view
         if !queueView.isHidden {
             queueView.frame = bounds
-        }
-
-        // Spotify web player view
-        if !spotifyWebView.isHidden {
-            spotifyWebView.frame = bounds
         }
 
         webPlayerButton.frame = NSRect(x: bounds.width - 44, y: 12, width: 32, height: 32)
@@ -490,13 +454,12 @@ private var pendingWebCloseWorkItem: DispatchWorkItem?
         let hasPlayback = api.currentPlayback?.item != nil
 
         loginView.isHidden = authenticated
-        headerBar.isHidden = !authenticated || showQueue || showDevices || showSpotifyWeb
-        playbackView.isHidden = !authenticated || !hasPlayback || showQueue || showDevices || showSpotifyWeb
-        noPlaybackView.isHidden = !authenticated || hasPlayback || showQueue || showDevices || showSpotifyWeb
-        devicesView.isHidden = !showDevices || showSpotifyWeb
-        queueView.isHidden = !showQueue || showSpotifyWeb
-    spotifyWebView.isHidden = !showSpotifyWeb
-    webPlayerButton.isHidden = !authenticated || showQueue || showDevices || showSpotifyWeb
+        headerBar.isHidden = !authenticated || showQueue || showDevices
+        playbackView.isHidden = !authenticated || !hasPlayback || showQueue || showDevices
+        noPlaybackView.isHidden = !authenticated || hasPlayback || showQueue || showDevices
+        devicesView.isHidden = !showDevices
+        queueView.isHidden = !showQueue
+        webPlayerButton.isHidden = !authenticated || showQueue || showDevices
 
     updatePlaybackControls()
     needsLayout = true
@@ -748,21 +711,7 @@ private var pendingWebCloseWorkItem: DispatchWorkItem?
     }
 
     private func openSpotifyWeb(url: URL? = nil) {
-        pendingWebCloseWorkItem?.cancel()
-        pendingWebCloseWorkItem = nil
-        spotifyWebView.prepareForPresentation()
-
-        showSpotifyWeb = true
-        showQueue = false
-        showDevices = false
-        onPreferredSizeChange?(NSSize(width: 1280, height: 820))
-        updateVisibility()
-
-        if let url {
-            spotifyWebView.open(url)
-        } else {
-            spotifyWebView.open()
-        }
+        onOpenSpotifyWeb?(url)
     }
 }
 
