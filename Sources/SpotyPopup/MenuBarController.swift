@@ -19,6 +19,7 @@ class MenuBarController: NSObject, NSPopoverDelegate {
         setupMenuBar()
         setupPopover()
         setupRemoteCommands()
+        observeSkipStateForRemoteCommands()
 
         // Link auth and API
         api.setAuthHandler(auth)
@@ -186,17 +187,46 @@ class MenuBarController: NSObject, NSPopoverDelegate {
     }
 
     private func refreshPopoverContent() {
-        popover.contentSize = NSSize(width: 320, height: 480)
+        setPopoverContentSize(NSSize(width: 320, height: 480), animated: false)
         let menuView = MenuView(
             api: api,
             auth: auth,
             onPreferredSizeChange: { [weak self] size in
-                self?.popover.contentSize = size
+                self?.setPopoverContentSize(size, animated: true)
             }
         )
         let viewController = NSViewController()
         viewController.view = menuView
         popover.contentViewController = viewController
+    }
+
+    private func setPopoverContentSize(_ size: NSSize, animated: Bool) {
+        guard animated else {
+            popover.contentSize = size
+            return
+        }
+
+        guard let window = popover.contentViewController?.view.window else {
+            popover.contentSize = size
+            return
+        }
+
+        let currentFrame = window.frame
+        let center = NSPoint(x: currentFrame.midX, y: currentFrame.midY)
+        let targetFrame = NSRect(
+            x: center.x - size.width / 2,
+            y: center.y - size.height / 2,
+            width: size.width,
+            height: size.height
+        )
+
+        popover.contentViewController?.view.setFrameSize(size)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.28
+            context.allowsImplicitAnimation = true
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            window.animator().setFrame(targetFrame, display: true)
+        }
     }
 
     @objc private func togglePopover() {
@@ -396,6 +426,7 @@ class MenuBarController: NSObject, NSPopoverDelegate {
         // Next track
         commandCenter.nextTrackCommand.isEnabled = true
         commandCenter.nextTrackCommand.addTarget { [weak self] _ in
+            guard self?.api.isSkippingQueueTrack != true else { return .commandFailed }
             Task {
                 await self?.api.nextTrack()
             }
@@ -405,11 +436,23 @@ class MenuBarController: NSObject, NSPopoverDelegate {
         // Previous track
         commandCenter.previousTrackCommand.isEnabled = true
         commandCenter.previousTrackCommand.addTarget { [weak self] _ in
+            guard self?.api.isSkippingQueueTrack != true else { return .commandFailed }
             Task {
                 await self?.api.previousTrack()
             }
             return .success
         }
+    }
+
+    private func observeSkipStateForRemoteCommands() {
+        api.$isSkippingQueueTrack
+            .receive(on: DispatchQueue.main)
+            .sink { isSkipping in
+                let commandCenter = MPRemoteCommandCenter.shared()
+                commandCenter.nextTrackCommand.isEnabled = !isSkipping
+                commandCenter.previousTrackCommand.isEnabled = !isSkipping
+            }
+            .store(in: &cancellables)
     }
 
     // MARK: - Event Monitor

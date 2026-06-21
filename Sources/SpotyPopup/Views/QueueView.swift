@@ -8,6 +8,8 @@ class QueueView: NSView {
     private let nextInQueueLabel = NSTextField(labelWithString: "Next in Queue")
     private let scrollView = NSScrollView()
     private let trackListContainer = NSView()
+    private let loadingOverlayView = NSVisualEffectView()
+    private let loadingSpinner = NSProgressIndicator()
     private let emptyStateView = NSView()
     private let emptyIconView = NSImageView()
     private let emptyLabel = NSTextField(labelWithString: "Queue is empty")
@@ -17,6 +19,7 @@ class QueueView: NSView {
     private var currentTrackView: QueueTrackRow?
 
     var onClose: (() -> Void)?
+    var onTrackSelected: ((Int) -> Void)?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -64,6 +67,19 @@ class QueueView: NSView {
         scrollView.drawsBackground = false
         scrollView.documentView = trackListContainer
         addSubview(scrollView)
+
+        loadingOverlayView.material = .hudWindow
+        loadingOverlayView.blendingMode = .withinWindow
+        loadingOverlayView.state = .active
+        loadingOverlayView.wantsLayer = true
+        loadingOverlayView.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.18).cgColor
+        loadingOverlayView.alphaValue = 0
+        loadingOverlayView.isHidden = true
+        addSubview(loadingOverlayView)
+
+        loadingSpinner.style = .spinning
+        loadingSpinner.controlSize = .regular
+        loadingOverlayView.addSubview(loadingSpinner)
 
         // Empty state
         emptyIconView.image = NSImage(systemSymbolName: "music.note.list", accessibilityDescription: nil)
@@ -122,6 +138,13 @@ class QueueView: NSView {
         // Scroll view with track list
         let footerHeight: CGFloat = 52
         scrollView.frame = NSRect(x: 0, y: footerHeight, width: bounds.width, height: max(0, yOffset - footerHeight))
+        loadingOverlayView.frame = scrollView.frame
+        loadingSpinner.frame = NSRect(
+            x: (loadingOverlayView.bounds.width - 32) / 2,
+            y: (loadingOverlayView.bounds.height - 32) / 2,
+            width: 32,
+            height: 32
+        )
         backButton.frame = NSRect(x: 16, y: 0, width: max(0, bounds.width - 16), height: footerHeight)
 
         layoutTrackList()
@@ -164,11 +187,29 @@ class QueueView: NSView {
         scrollView.reflectScrolledClipView(scrollView.contentView)
     }
 
+    func setLoading(_ isLoading: Bool) {
+        if isLoading {
+            loadingOverlayView.isHidden = false
+            loadingSpinner.startAnimation(nil)
+        } else {
+            loadingSpinner.stopAnimation(nil)
+        }
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.16
+            loadingOverlayView.animator().alphaValue = isLoading ? 1 : 0
+        } completionHandler: { [weak self] in
+            guard let self else { return }
+            self.loadingOverlayView.isHidden = !isLoading
+        }
+    }
+
     private var lastQueueIds: [String] = []
     private var lastCurrentTrackId: String?
 
-    func configure(queue: [Track], currentTrack: Track?, onClose: @escaping () -> Void) {
+    func configure(queue: [Track], currentTrack: Track?, onClose: @escaping () -> Void, maxSkippableTracks: Int = 10, onTrackSelected: ((Int) -> Void)? = nil) {
         self.onClose = onClose
+        self.onTrackSelected = onTrackSelected
 
         let queueIds = queue.map(\.id)
         let currentId = currentTrack?.id
@@ -201,9 +242,12 @@ class QueueView: NSView {
             currentTrackView = currentRow
         }
 
-        for track in queue {
+        for (index, track) in queue.enumerated() {
             let rowView = QueueTrackRow()
-            rowView.configure(track: track, isPlaying: false)
+            rowView.configure(track: track, isPlaying: false, isSelectable: index < maxSkippableTracks)
+            rowView.onClick = { [weak self] in
+                self?.onTrackSelected?(index)
+            }
             trackListContainer.addSubview(rowView)
             trackRowViews.append(rowView)
         }
@@ -222,12 +266,18 @@ class QueueView: NSView {
 
 class QueueTrackRow: NSView {
     private let albumArtView = NSImageView()
+    private let albumPlayOverlayView = NSView()
+    private let albumPlayIconView = NSImageView()
     private let trackNameLabel = NSTextField(labelWithString: "")
     private let artistLabel = NSTextField(labelWithString: "")
     private let durationLabel = NSTextField(labelWithString: "")
     private let playingIconView = NSImageView()
 
     private var isPlaying = false
+    private var isHovering = false
+    private var isSelectable = true
+    private var hoverTrackingArea: NSTrackingArea?
+    var onClick: (() -> Void)?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -248,6 +298,18 @@ class QueueTrackRow: NSView {
         albumArtView.layer?.cornerRadius = 4
         albumArtView.layer?.masksToBounds = true
         addSubview(albumArtView)
+
+        albumPlayOverlayView.wantsLayer = true
+        albumPlayOverlayView.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.42).cgColor
+        albumPlayOverlayView.layer?.cornerRadius = 4
+        albumPlayOverlayView.layer?.masksToBounds = true
+        albumPlayOverlayView.isHidden = true
+        addSubview(albumPlayOverlayView)
+
+        albumPlayIconView.image = NSImage(systemSymbolName: "play.fill", accessibilityDescription: nil)
+        albumPlayIconView.contentTintColor = .white
+        albumPlayIconView.imageScaling = .scaleProportionallyDown
+        albumPlayOverlayView.addSubview(albumPlayIconView)
 
         // Track name
         trackNameLabel.isBordered = false
@@ -277,6 +339,7 @@ class QueueTrackRow: NSView {
         // Playing icon
         playingIconView.image = NSImage(systemSymbolName: "speaker.wave.2.fill", accessibilityDescription: nil)
         playingIconView.contentTintColor = .controlAccentColor
+        playingIconView.imageScaling = .scaleProportionallyDown
         addSubview(playingIconView)
     }
 
@@ -284,6 +347,8 @@ class QueueTrackRow: NSView {
         super.layout()
 
         albumArtView.frame = NSRect(x: 20, y: 6, width: 48, height: 48)
+        albumPlayOverlayView.frame = albumArtView.frame
+        albumPlayIconView.frame = NSRect(x: 15, y: 14, width: 18, height: 20)
 
         let textX: CGFloat = 80
         let textWidth = bounds.width - textX - 70
@@ -293,12 +358,48 @@ class QueueTrackRow: NSView {
 
         durationLabel.frame = NSRect(x: bounds.width - 70, y: 24, width: 50, height: 16)
 
-        playingIconView.frame = NSRect(x: textX + trackNameLabel.frame.width + 4, y: 34, width: 14, height: 14)
+        playingIconView.frame = NSRect(x: bounds.width - 47, y: 23, width: 16, height: 16)
         playingIconView.isHidden = !isPlaying
+        durationLabel.isHidden = isPlaying
+        updateHoverState()
     }
 
-    func configure(track: Track, isPlaying: Bool) {
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+
+        if let hoverTrackingArea {
+            removeTrackingArea(hoverTrackingArea)
+        }
+
+        let trackingArea = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(trackingArea)
+        hoverTrackingArea = trackingArea
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isHovering = true
+        updateHoverState()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isHovering = false
+        updateHoverState()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        super.mouseDown(with: event)
+        guard isSelectable else { return }
+        onClick?()
+    }
+
+    func configure(track: Track, isPlaying: Bool, isSelectable: Bool = true) {
         self.isPlaying = isPlaying
+        self.isSelectable = isSelectable
 
         trackNameLabel.stringValue = track.name
         trackNameLabel.font = NSFont.systemFont(ofSize: 14, weight: isPlaying ? .semibold : .regular)
@@ -311,6 +412,7 @@ class QueueTrackRow: NSView {
         } else {
             layer?.backgroundColor = NSColor.clear.cgColor
         }
+        updateHoverState()
 
         if let artURL = track.albumArtURL, let url = URL(string: artURL) {
             loadImage(from: url)
@@ -325,8 +427,12 @@ class QueueTrackRow: NSView {
         URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
             guard let data = data, let image = NSImage(data: data) else { return }
             DispatchQueue.main.async {
-                self?.albumArtView.image = image
-            }
+            self?.albumArtView.image = image
+        }
         }.resume()
+    }
+
+    private func updateHoverState() {
+        albumPlayOverlayView.isHidden = isPlaying || !isSelectable || !isHovering
     }
 }

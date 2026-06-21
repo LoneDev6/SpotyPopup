@@ -1,6 +1,8 @@
 import Foundation
 
 class SpotifyAPI: ObservableObject {
+    static let maxQueueSkipCount = 10
+
     @Published var currentPlayback: PlaybackState?
     @Published var isLoading = false
     @Published var playlists: [Playlist] = []
@@ -10,6 +12,7 @@ class SpotifyAPI: ObservableObject {
     @Published var tracksError: String?
     @Published var isShuffleOn = false
     @Published var availableDevices: [Device] = []
+    @Published var isSkippingQueueTrack = false
 
     private let baseURL = "https://api.spotify.com/v1"
     private var accessToken: String?
@@ -102,18 +105,65 @@ class SpotifyAPI: ObservableObject {
     }
 
     func nextTrack() async {
+        guard !isSkippingQueueTrack else { return }
         await sendPlayerCommand(endpoint: "next", method: "POST")
         try? await Task.sleep(nanoseconds: 500_000_000)
         await fetchCurrentPlayback()
     }
 
+    func skipToQueuedTrack(at index: Int) async {
+        guard await beginQueueSkip(at: index) else { return }
+        defer {
+            Task { @MainActor in
+                self.endQueueSkip()
+            }
+        }
+
+        await fetchCurrentPlayback()
+
+        let originalVolume = currentPlayback?.device?.volumePercent
+        let shouldRestoreVolume = originalVolume.map { $0 > 0 } ?? false
+
+        if shouldRestoreVolume {
+            await setVolume(0)
+            try? await Task.sleep(nanoseconds: 120_000_000)
+        }
+
+        for _ in 0...index {
+            await sendPlayerCommand(endpoint: "next", method: "POST", shouldRefresh: false)
+            try? await Task.sleep(nanoseconds: 180_000_000)
+        }
+
+        if shouldRestoreVolume, let originalVolume {
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            await setVolume(originalVolume)
+        }
+
+        try? await Task.sleep(nanoseconds: 500_000_000)
+        await fetchCurrentPlayback()
+        await fetchQueue()
+    }
+
+    @MainActor
+    private func beginQueueSkip(at index: Int) -> Bool {
+        guard index >= 0, index < queue.count, index < Self.maxQueueSkipCount, !isSkippingQueueTrack else { return false }
+        isSkippingQueueTrack = true
+        return true
+    }
+
+    @MainActor
+    private func endQueueSkip() {
+        isSkippingQueueTrack = false
+    }
+
     func previousTrack() async {
+        guard !isSkippingQueueTrack else { return }
         await sendPlayerCommand(endpoint: "previous", method: "POST")
         try? await Task.sleep(nanoseconds: 500_000_000)
         await fetchCurrentPlayback()
     }
 
-    private func sendPlayerCommand(endpoint: String, method: String, body: Data? = nil, retryOnAuthError: Bool = true) async {
+    private func sendPlayerCommand(endpoint: String, method: String, body: Data? = nil, retryOnAuthError: Bool = true, shouldRefresh: Bool = true) async {
         guard let token = accessToken else { return }
 
         var request = URLRequest(url: URL(string: "\(baseURL)/me/player/\(endpoint)")!)
@@ -129,7 +179,7 @@ class SpotifyAPI: ObservableObject {
 
             if let httpResponse = response as? HTTPURLResponse {
                 if retryOnAuthError, await handleAuthError(statusCode: httpResponse.statusCode) {
-                    await sendPlayerCommand(endpoint: endpoint, method: method, body: body, retryOnAuthError: false)
+                    await sendPlayerCommand(endpoint: endpoint, method: method, body: body, retryOnAuthError: false, shouldRefresh: shouldRefresh)
                     return
                 }
 
@@ -140,7 +190,9 @@ class SpotifyAPI: ObservableObject {
                 }
             }
 
-            await fetchCurrentPlayback()
+            if shouldRefresh {
+                await fetchCurrentPlayback()
+            }
         } catch {
             AppLogger.error("Failed to send command \(endpoint): \(error)", category: AppLogger.api)
         }

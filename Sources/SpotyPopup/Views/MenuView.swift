@@ -56,9 +56,10 @@ class MenuView: NSView {
     private var showSpotifyWeb = false
 
     private var imageCache = [String: NSImage]()
-    private var currentAlbumArtURL: String?
-    private var lastTrackId: String?
-    private var lastIsPlaying: Bool?
+private var currentAlbumArtURL: String?
+private var lastTrackId: String?
+private var lastIsPlaying: Bool?
+private var pendingWebCloseWorkItem: DispatchWorkItem?
 
     init(api: SpotifyAPI, auth: SpotifyAuth, onPreferredSizeChange: ((NSSize) -> Void)? = nil) {
         self.api = api
@@ -302,12 +303,27 @@ class MenuView: NSView {
 
     private func setupSpotifyWebView() {
         spotifyWebView.onBack = { [weak self] in
-            if AppSettings.closeSpotifyWebViewOnBack {
-                self?.spotifyWebView.close()
+            guard let self else { return }
+
+            self.spotifyWebView.capturePreview()
+            self.pendingWebCloseWorkItem?.cancel()
+
+            switch AppSettings.spotifyWebMemoryPolicy {
+            case .instant:
+                self.spotifyWebView.close()
+            case .after30Seconds:
+                let workItem = DispatchWorkItem { [weak self] in
+                    self?.spotifyWebView.close()
+                }
+                self.pendingWebCloseWorkItem = workItem
+                DispatchQueue.main.asyncAfter(deadline: .now() + 30, execute: workItem)
+            case .never:
+                break
             }
-            self?.showSpotifyWeb = false
-            self?.onPreferredSizeChange?(NSSize(width: 320, height: 480))
-            self?.updateVisibility()
+
+            self.showSpotifyWeb = false
+            self.onPreferredSizeChange?(NSSize(width: 320, height: 480))
+            self.updateVisibility()
         }
         addSubview(spotifyWebView)
     }
@@ -457,6 +473,14 @@ class MenuView: NSView {
                 self.updateQueueView()
             }
             .store(in: &cancellables)
+
+        api.$isSkippingQueueTrack
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isSkipping in
+                self?.queueView.setLoading(isSkipping)
+                self?.updatePlaybackControls()
+            }
+            .store(in: &cancellables)
     }
 
     private var cancellables = Set<AnyCancellable>()
@@ -471,10 +495,19 @@ class MenuView: NSView {
         noPlaybackView.isHidden = !authenticated || hasPlayback || showQueue || showDevices || showSpotifyWeb
         devicesView.isHidden = !showDevices || showSpotifyWeb
         queueView.isHidden = !showQueue || showSpotifyWeb
-        spotifyWebView.isHidden = !showSpotifyWeb
-        webPlayerButton.isHidden = !authenticated || showQueue || showDevices || showSpotifyWeb
+    spotifyWebView.isHidden = !showSpotifyWeb
+    webPlayerButton.isHidden = !authenticated || showQueue || showDevices || showSpotifyWeb
 
-        needsLayout = true
+    updatePlaybackControls()
+    needsLayout = true
+    }
+
+    private func updatePlaybackControls() {
+        let controlsEnabled = !api.isSkippingQueueTrack
+        previousButton.isEnabled = controlsEnabled
+        nextButton.isEnabled = controlsEnabled
+        previousButton.alphaValue = controlsEnabled ? 1 : 0.35
+        nextButton.alphaValue = controlsEnabled ? 1 : 0.35
     }
 
     private func updatePlaybackView() {
@@ -561,12 +594,20 @@ class MenuView: NSView {
 
     private func updateQueueView() {
         queueView.configure(
-            queue: api.queue,
-            currentTrack: api.currentPlayback?.item,
-            onClose: { [weak self] in
-                self?.showQueue = false
-                self?.updateVisibility()
+        queue: api.queue,
+        currentTrack: api.currentPlayback?.item,
+        onClose: { [weak self] in
+            self?.showQueue = false
+            self?.updateVisibility()
+        },
+        maxSkippableTracks: SpotifyAPI.maxQueueSkipCount,
+        onTrackSelected: { [weak self] index in
+            guard let self, index < SpotifyAPI.maxQueueSkipCount, !self.api.isSkippingQueueTrack else { return }
+
+            Task {
+                await self.api.skipToQueuedTrack(at: index)
             }
+        }
         )
     }
 
@@ -643,6 +684,7 @@ class MenuView: NSView {
     }
 
     @objc private func previousButtonTapped() {
+        guard !api.isSkippingQueueTrack else { return }
         Task {
             await api.previousTrack()
         }
@@ -665,6 +707,7 @@ class MenuView: NSView {
     }
 
     @objc private func nextButtonTapped() {
+        guard !api.isSkippingQueueTrack else { return }
         Task {
             await api.nextTrack()
         }
@@ -705,16 +748,21 @@ class MenuView: NSView {
     }
 
     private func openSpotifyWeb(url: URL? = nil) {
+        pendingWebCloseWorkItem?.cancel()
+        pendingWebCloseWorkItem = nil
+        spotifyWebView.prepareForPresentation()
+
         showSpotifyWeb = true
         showQueue = false
         showDevices = false
+        onPreferredSizeChange?(NSSize(width: 1280, height: 820))
+        updateVisibility()
+
         if let url {
             spotifyWebView.open(url)
         } else {
             spotifyWebView.open()
         }
-        onPreferredSizeChange?(NSSize(width: 1280, height: 820))
-        updateVisibility()
     }
 }
 

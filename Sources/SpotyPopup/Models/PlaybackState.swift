@@ -10,6 +10,13 @@ struct PlaybackState: Codable {
     struct Device: Codable {
         let name: String
         let type: String
+        let volumePercent: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case name
+            case type
+            case volumePercent = "volume_percent"
+        }
     }
 
     enum CodingKeys: String, CodingKey {
