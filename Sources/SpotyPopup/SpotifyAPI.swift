@@ -484,6 +484,13 @@ class SpotifyAPI: ObservableObject {
     }
 
     private func spotifydExecutablePath() -> String? {
+        switch SpotifydManager.installState() {
+        case .notInstalled:
+            break
+        case .appManaged(let path), .homebrew(let path), .system(let path):
+            return path
+        }
+
         let process = Process()
         let output = Pipe()
 

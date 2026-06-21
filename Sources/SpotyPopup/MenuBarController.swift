@@ -27,12 +27,14 @@ class MenuBarController: NSObject, NSPopoverDelegate {
 
         if let token = auth.accessToken {
             api.setAccessToken(token)
+            applySavedVolume()
         }
 
         auth.$accessToken
             .compactMap { $0 }
             .sink { [weak self] token in
                 self?.api.setAccessToken(token)
+                self?.applySavedVolume()
                 self?.transferToLocalDevice()
             }
             .store(in: &cancellables)
@@ -41,6 +43,14 @@ class MenuBarController: NSObject, NSPopoverDelegate {
     private func transferToLocalDevice() {
         Task {
             await api.prepareDeviceForPlay()
+            await api.setVolume(AppSettings.spotifyVolume)
+        }
+    }
+
+    private func applySavedVolume() {
+        let volume = AppSettings.spotifyVolume
+        Task {
+            await api.setVolume(volume)
         }
     }
 
@@ -90,12 +100,10 @@ class MenuBarController: NSObject, NSPopoverDelegate {
         guard let statusBarView else { return }
 
         let menu = NSMenu()
-        let logoutItem = NSMenuItem(title: "Logout", action: #selector(logoutFromStatusMenu), keyEquivalent: "")
-        logoutItem.target = self
-        logoutItem.isEnabled = auth.isAuthenticated
-        menu.addItem(logoutItem)
+        let settingsItem = NSMenuItem(title: "Settings", action: #selector(openSettingsFromStatusMenu), keyEquivalent: "")
+        settingsItem.target = self
+        menu.addItem(settingsItem)
         menu.addItem(.separator())
-
         let quitItem = NSMenuItem(title: "Quit SpotyPopup", action: #selector(quitFromStatusMenu), keyEquivalent: "")
         quitItem.target = self
         menu.addItem(quitItem)
@@ -107,11 +115,12 @@ class MenuBarController: NSObject, NSPopoverDelegate {
         NSMenu.popUpContextMenu(menu, with: event, for: statusBarView)
     }
 
-    @objc private func logoutFromStatusMenu() {
-        auth.logout()
+    @objc private func openSettingsFromStatusMenu() {
+        guard let button = statusItem.button else { return }
         if isPopoverOpen {
             closePopover()
         }
+        openSettingsPopover(relativeTo: button)
     }
 
     @objc private func quitFromStatusMenu() {
@@ -177,9 +186,13 @@ class MenuBarController: NSObject, NSPopoverDelegate {
     }
 
     private func refreshPopoverContent() {
+        popover.contentSize = NSSize(width: 320, height: 480)
         let menuView = MenuView(
             api: api,
-            auth: auth
+            auth: auth,
+            onPreferredSizeChange: { [weak self] size in
+                self?.popover.contentSize = size
+            }
         )
         let viewController = NSViewController()
         viewController.view = menuView
@@ -218,10 +231,36 @@ class MenuBarController: NSObject, NSPopoverDelegate {
         }
     }
 
+    private func openSettingsPopover(relativeTo button: NSButton) {
+        let viewController = NSViewController()
+        popover.contentSize = NSSize(width: 320, height: 480)
+        viewController.view = SettingsView(
+            frame: NSRect(x: 0, y: 0, width: 320, height: 480),
+            onLogout: auth.isAuthenticated ? { [weak self] in
+                self?.auth.logout()
+                if self?.isPopoverOpen == true {
+                    self?.closePopover()
+                }
+            } : nil
+        )
+        popover.contentViewController = viewController
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+
+        if let window = popover.contentViewController?.view.window {
+            window.isOpaque = false
+            window.backgroundColor = .clear
+        }
+
+        isPopoverOpen = true
+        startEventMonitor()
+        startPositionUpdateTimer()
+    }
+
     private func closePopover() {
         isPopoverOpen = false
         stopEventMonitor()
         stopPositionUpdateTimer()
+        popover.contentSize = NSSize(width: 320, height: 480)
         popover.contentViewController = nil
         popover.performClose(nil)
         startPolling() // Resume background polling at slower rate
@@ -296,6 +335,28 @@ class MenuBarController: NSObject, NSPopoverDelegate {
 
     func handleAuthCallback(url: URL) {
         auth.handleCallback(url: url)
+    }
+
+    func pauseBeforeTerminate(completion: @escaping () -> Void) {
+        stopPolling()
+
+        var didComplete = false
+        let finish = {
+            guard !didComplete else { return }
+            didComplete = true
+            completion()
+        }
+
+        Task {
+            await api.pause()
+            await MainActor.run {
+                finish()
+            }
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            finish()
+        }
     }
 
     private func setupRemoteCommands() {

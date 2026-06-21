@@ -14,10 +14,12 @@ struct Track: Codable, Identifiable {
     }
 
     struct Artist: Codable {
+        let id: String?
         let name: String
     }
 
     struct Album: Codable {
+        let id: String?
         let name: String
         let images: [Image]
     }

@@ -3,6 +3,7 @@ import AppKit
 class MenuView: NSView {
     private let api: SpotifyAPI
     private let auth: SpotifyAuth
+    var onPreferredSizeChange: ((NSSize) -> Void)?
     private let backgroundEffectView = NSVisualEffectView()
 
     // Login view
@@ -31,6 +32,7 @@ class MenuView: NSView {
     private let previousButton = NSButton()
     private let playPauseButton = NSButton()
     private let nextButton = NSButton()
+    private let webPlayerButton = NSButton()
 
     // No playback view
     private let noPlaybackView = NSView()
@@ -45,18 +47,23 @@ class MenuView: NSView {
     // Queue view
     private let queueView = QueueView()
 
+    // Spotify web player view
+    private let spotifyWebView = SpotifyWebPlayerView()
+
     private var showQueue = false
     private var showVolumeControl = false
     private var showDevices = false
+    private var showSpotifyWeb = false
 
     private var imageCache = [String: NSImage]()
     private var currentAlbumArtURL: String?
     private var lastTrackId: String?
     private var lastIsPlaying: Bool?
 
-    init(api: SpotifyAPI, auth: SpotifyAuth) {
+    init(api: SpotifyAPI, auth: SpotifyAuth, onPreferredSizeChange: ((NSSize) -> Void)? = nil) {
         self.api = api
         self.auth = auth
+        self.onPreferredSizeChange = onPreferredSizeChange
         super.init(frame: NSRect(x: 0, y: 0, width: 320, height: 480))
         setupViews()
         observeChanges()
@@ -83,6 +90,8 @@ class MenuView: NSView {
         setupNoPlaybackView()
         setupDevicesView()
         setupQueueView()
+        setupSpotifyWebView()
+        setupWebPlayerButton()
     }
 
     private func setupLoginView() {
@@ -171,7 +180,7 @@ class MenuView: NSView {
 
         volumeSlider.minValue = 0
         volumeSlider.maxValue = 100
-        volumeSlider.doubleValue = 50
+        volumeSlider.doubleValue = Double(AppSettings.spotifyVolume)
         volumeSlider.target = self
         volumeSlider.action = #selector(volumeSliderChanged)
         headerBar.addSubview(volumeSlider)
@@ -186,6 +195,8 @@ class MenuView: NSView {
         albumArtView.wantsLayer = true
         albumArtView.layer?.cornerRadius = 8
         albumArtView.layer?.masksToBounds = true
+        albumArtView.toolTip = "Open Spotify Web Player"
+        albumArtView.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(albumArtTapped)))
         playbackView.addSubview(albumArtView)
 
         trackNameLabel.font = NSFont.systemFont(ofSize: 16, weight: .semibold)
@@ -195,6 +206,8 @@ class MenuView: NSView {
         trackNameLabel.drawsBackground = false
         trackNameLabel.lineBreakMode = .byTruncatingTail
         trackNameLabel.maximumNumberOfLines = 2
+        trackNameLabel.toolTip = "Open album in Spotify Web Player"
+        trackNameLabel.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(trackNameTapped)))
         playbackView.addSubview(trackNameLabel)
 
         artistLabel.font = NSFont.systemFont(ofSize: 14)
@@ -204,6 +217,8 @@ class MenuView: NSView {
         artistLabel.isEditable = false
         artistLabel.drawsBackground = false
         artistLabel.lineBreakMode = .byTruncatingTail
+        artistLabel.toolTip = "Open artist in Spotify Web Player"
+        artistLabel.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(artistNameTapped)))
         playbackView.addSubview(artistLabel)
 
         playbackView.addSubview(progressBarView)
@@ -283,6 +298,28 @@ class MenuView: NSView {
             self?.updateVisibility()
         }
         addSubview(queueView)
+    }
+
+    private func setupSpotifyWebView() {
+        spotifyWebView.onBack = { [weak self] in
+            if AppSettings.closeSpotifyWebViewOnBack {
+                self?.spotifyWebView.close()
+            }
+            self?.showSpotifyWeb = false
+            self?.onPreferredSizeChange?(NSSize(width: 320, height: 480))
+            self?.updateVisibility()
+        }
+        addSubview(spotifyWebView)
+    }
+
+    private func setupWebPlayerButton() {
+        webPlayerButton.image = NSImage(systemSymbolName: "safari.fill", accessibilityDescription: nil)
+        webPlayerButton.bezelStyle = .recessed
+        webPlayerButton.isBordered = false
+        webPlayerButton.target = self
+        webPlayerButton.action = #selector(webPlayerButtonTapped)
+        webPlayerButton.toolTip = "Open Spotify Web Player"
+        addSubview(webPlayerButton)
     }
 
     override func layout() {
@@ -376,6 +413,13 @@ class MenuView: NSView {
         if !queueView.isHidden {
             queueView.frame = bounds
         }
+
+        // Spotify web player view
+        if !spotifyWebView.isHidden {
+            spotifyWebView.frame = bounds
+        }
+
+        webPlayerButton.frame = NSRect(x: bounds.width - 44, y: 12, width: 32, height: 32)
     }
 
     private func observeChanges() {
@@ -422,11 +466,13 @@ class MenuView: NSView {
         let hasPlayback = api.currentPlayback?.item != nil
 
         loginView.isHidden = authenticated
-        headerBar.isHidden = !authenticated || showQueue || showDevices
-        playbackView.isHidden = !authenticated || !hasPlayback || showQueue || showDevices
-        noPlaybackView.isHidden = !authenticated || hasPlayback || showQueue || showDevices
-        devicesView.isHidden = !showDevices
-        queueView.isHidden = !showQueue
+        headerBar.isHidden = !authenticated || showQueue || showDevices || showSpotifyWeb
+        playbackView.isHidden = !authenticated || !hasPlayback || showQueue || showDevices || showSpotifyWeb
+        noPlaybackView.isHidden = !authenticated || hasPlayback || showQueue || showDevices || showSpotifyWeb
+        devicesView.isHidden = !showDevices || showSpotifyWeb
+        queueView.isHidden = !showQueue || showSpotifyWeb
+        spotifyWebView.isHidden = !showSpotifyWeb
+        webPlayerButton.isHidden = !authenticated || showQueue || showDevices || showSpotifyWeb
 
         needsLayout = true
     }
@@ -589,8 +635,10 @@ class MenuView: NSView {
     }
 
     @objc private func volumeSliderChanged() {
+        let volume = Int(volumeSlider.doubleValue)
+        AppSettings.spotifyVolume = volume
         Task {
-            await api.setVolume(Int(volumeSlider.doubleValue))
+            await api.setVolume(volume)
         }
     }
 
@@ -626,6 +674,47 @@ class MenuView: NSView {
         Task {
             await api.fetchCurrentPlayback()
         }
+    }
+
+    @objc private func webPlayerButtonTapped() {
+        openSpotifyWeb()
+    }
+
+    @objc private func albumArtTapped() {
+        openSpotifyWeb()
+    }
+
+    @objc private func trackNameTapped() {
+        guard let albumId = api.currentPlayback?.item?.album.id,
+              let url = URL(string: "https://open.spotify.com/album/\(albumId)?nd=1") else {
+            openSpotifyWeb()
+            return
+        }
+
+        openSpotifyWeb(url: url)
+    }
+
+    @objc private func artistNameTapped() {
+        guard let artistId = api.currentPlayback?.item?.artists.first?.id,
+              let url = URL(string: "https://open.spotify.com/artist/\(artistId)?nd=1") else {
+            openSpotifyWeb()
+            return
+        }
+
+        openSpotifyWeb(url: url)
+    }
+
+    private func openSpotifyWeb(url: URL? = nil) {
+        showSpotifyWeb = true
+        showQueue = false
+        showDevices = false
+        if let url {
+            spotifyWebView.open(url)
+        } else {
+            spotifyWebView.open()
+        }
+        onPreferredSizeChange?(NSSize(width: 1280, height: 820))
+        updateVisibility()
     }
 }
 

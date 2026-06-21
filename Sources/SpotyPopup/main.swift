@@ -2,6 +2,7 @@ import AppKit
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     var menuBarController: MenuBarController?
+    private var isTerminating = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupMenuBar()
@@ -37,6 +38,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         menuBarController?.handleAuthCallback(url: url)
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard !isTerminating else {
+            return .terminateNow
+        }
+
+        isTerminating = true
+        guard let menuBarController else {
+            return .terminateNow
+        }
+
+        menuBarController.pauseBeforeTerminate {
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+
+        return .terminateLater
     }
 }
 
