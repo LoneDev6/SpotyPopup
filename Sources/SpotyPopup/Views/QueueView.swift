@@ -10,6 +10,7 @@ class QueueView: NSView {
     private let emptyStateView = NSView()
     private let emptyIconView = NSImageView()
     private let emptyLabel = NSTextField(labelWithString: "Queue is empty")
+    private let backButton = NSButton()
 
     private var trackRowViews: [QueueTrackRow] = []
     private var currentTrackView: QueueTrackRow?
@@ -69,6 +70,19 @@ class QueueView: NSView {
 
         addSubview(emptyStateView)
         emptyStateView.isHidden = true
+
+        backButton.title = "Back"
+        backButton.image = NSImage(systemSymbolName: "chevron.left", accessibilityDescription: nil)
+        backButton.imagePosition = .imageLeft
+        backButton.imageHugsTitle = true
+        backButton.bezelStyle = .recessed
+        backButton.isBordered = false
+        backButton.target = self
+        backButton.action = #selector(closeButtonTapped)
+        backButton.alignment = .left
+        backButton.font = NSFont.systemFont(ofSize: 14, weight: .medium)
+        backButton.contentTintColor = .labelColor
+        addSubview(backButton)
     }
 
     override func layout() {
@@ -99,7 +113,9 @@ class QueueView: NSView {
         }
 
         // Scroll view with track list
-        scrollView.frame = NSRect(x: 0, y: 0, width: bounds.width, height: yOffset)
+        let footerHeight: CGFloat = 52
+        scrollView.frame = NSRect(x: 0, y: footerHeight, width: bounds.width, height: max(0, yOffset - footerHeight))
+        backButton.frame = NSRect(x: 16, y: 0, width: max(0, bounds.width - 16), height: footerHeight)
 
         layoutTrackList()
 
@@ -129,6 +145,16 @@ class QueueView: NSView {
             rowView.frame = NSRect(x: 0, y: yOffset, width: bounds.width, height: 60)
             yOffset += 60
         }
+    }
+
+    func scrollToTop() {
+        layoutSubtreeIfNeeded()
+
+        guard let documentView = scrollView.documentView else { return }
+
+        let topY = max(0, documentView.bounds.height - scrollView.contentView.bounds.height)
+        scrollView.contentView.scroll(to: NSPoint(x: 0, y: topY))
+        scrollView.reflectScrolledClipView(scrollView.contentView)
     }
 
     private var lastQueueIds: [String] = []

@@ -3,7 +3,6 @@ import AppKit
 class MenuView: NSView {
     private let api: SpotifyAPI
     private let auth: SpotifyAuth
-    private var onClose: (() -> Void)?
 
     // Login view
     private let loginView = NSView()
@@ -21,8 +20,6 @@ class MenuView: NSView {
     private let queueButton = NSButton()
     private let volumeButton = NSButton()
     private let volumeSlider = NSSlider()
-    private let logoutButton = NSButton()
-    private let closeButton = NSButton()
 
     // Playback view
     private let playbackView = NSView()
@@ -56,10 +53,9 @@ class MenuView: NSView {
     private var lastTrackId: String?
     private var lastIsPlaying: Bool?
 
-    init(api: SpotifyAPI, auth: SpotifyAuth, onClose: @escaping () -> Void) {
+    init(api: SpotifyAPI, auth: SpotifyAuth) {
         self.api = api
         self.auth = auth
-        self.onClose = onClose
         super.init(frame: NSRect(x: 0, y: 0, width: 320, height: 480))
         setupViews()
         observeChanges()
@@ -172,22 +168,6 @@ class MenuView: NSView {
         volumeSlider.target = self
         volumeSlider.action = #selector(volumeSliderChanged)
         headerBar.addSubview(volumeSlider)
-
-        logoutButton.image = NSImage(systemSymbolName: "arrow.right.square", accessibilityDescription: nil)
-        logoutButton.bezelStyle = .recessed
-        logoutButton.isBordered = false
-        logoutButton.target = self
-        logoutButton.action = #selector(logoutButtonTapped)
-        logoutButton.toolTip = "Logout"
-        headerBar.addSubview(logoutButton)
-
-        closeButton.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: nil)
-        closeButton.bezelStyle = .recessed
-        closeButton.isBordered = false
-        closeButton.target = self
-        closeButton.action = #selector(closeButtonTapped)
-        closeButton.toolTip = "Close"
-        headerBar.addSubview(closeButton)
 
         addSubview(headerBar)
     }
@@ -323,16 +303,13 @@ class MenuView: NSView {
 
             deviceButton.frame = NSRect(x: xPos, y: iconY, width: iconSize, height: iconSize)
             xPos += iconSize + 12
-
+            
             queueButton.frame = NSRect(x: xPos, y: iconY, width: iconSize, height: iconSize)
-
-            let rightIconsStart = bounds.width - 220
-            volumeButton.frame = NSRect(x: rightIconsStart, y: iconY, width: iconSize, height: iconSize)
-            volumeSlider.frame = NSRect(x: rightIconsStart + iconSize + 4, y: iconY + 4, width: 80, height: 20)
+            xPos += iconSize + 12
+            
+            volumeButton.frame = NSRect(x: xPos, y: iconY, width: iconSize, height: iconSize)
+            volumeSlider.frame = NSRect(x: xPos + iconSize + 4, y: iconY + 4, width: 80, height: 20)
             volumeSlider.isHidden = !showVolumeControl
-
-            logoutButton.frame = NSRect(x: bounds.width - 72, y: iconY, width: iconSize, height: iconSize)
-            closeButton.frame = NSRect(x: bounds.width - 40, y: iconY, width: iconSize, height: iconSize)
         }
 
         // Playback view
@@ -582,11 +559,20 @@ class MenuView: NSView {
     @objc private func queueButtonTapped() {
         showQueue.toggle()
         if showQueue {
-            Task {
-                await api.fetchQueue()
+            Task { [weak self] in
+                await self?.api.fetchQueue()
+                DispatchQueue.main.async {
+                    self?.queueView.scrollToTop()
+                }
             }
         }
         updateVisibility()
+
+        if showQueue {
+            DispatchQueue.main.async { [weak self] in
+                self?.queueView.scrollToTop()
+            }
+        }
     }
 
     @objc private func volumeButtonTapped() {
@@ -598,14 +584,6 @@ class MenuView: NSView {
         Task {
             await api.setVolume(Int(volumeSlider.doubleValue))
         }
-    }
-
-    @objc private func logoutButtonTapped() {
-        auth.logout()
-    }
-
-    @objc private func closeButtonTapped() {
-        onClose?()
     }
 
     @objc private func previousButtonTapped() {
@@ -689,10 +667,17 @@ class DevicesView: NSView {
         scrollView.documentView = deviceListContainer
         addSubview(scrollView)
 
-        backButton.title = "← Back"
-        backButton.bezelStyle = .rounded
+        backButton.title = "Back"
+        backButton.image = NSImage(systemSymbolName: "chevron.left", accessibilityDescription: nil)
+        backButton.imagePosition = .imageLeft
+        backButton.imageHugsTitle = true
+        backButton.bezelStyle = .recessed
+        backButton.isBordered = false
         backButton.target = self
         backButton.action = #selector(backButtonTapped)
+        backButton.alignment = .left
+        backButton.font = NSFont.systemFont(ofSize: 14, weight: .medium)
+        backButton.contentTintColor = .labelColor
         addSubview(backButton)
 
         // Empty state
@@ -723,7 +708,7 @@ class DevicesView: NSView {
 
         layoutDeviceList()
 
-        backButton.frame = NSRect(x: 20, y: 12, width: 100, height: 32)
+        backButton.frame = NSRect(x: 16, y: 0, width: max(0, bounds.width - 16), height: 52)
 
         // Empty state
         emptyView.frame = NSRect(x: 0, y: 60, width: bounds.width, height: bounds.height - 120)

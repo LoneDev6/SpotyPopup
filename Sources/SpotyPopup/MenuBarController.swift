@@ -40,14 +40,7 @@ class MenuBarController: NSObject, NSPopoverDelegate {
 
     private func transferToLocalDevice() {
         Task {
-            await api.fetchAvailableDevices()
-
-            // Find local device (spotifyd or computer)
-            if let localDevice = api.availableDevices.first(where: {
-                $0.name.lowercased().contains("spotifyd") || $0.type.lowercased() == "computer"
-            }), !localDevice.isActive {
-                await api.transferPlayback(to: localDevice.id)
-            }
+            await api.prepareDeviceForPlay()
         }
     }
 
@@ -63,6 +56,9 @@ class MenuBarController: NSObject, NSPopoverDelegate {
             let customView = StatusBarView(frame: button.bounds)
             customView.onClick = { [weak self] in
                 self?.togglePopover()
+            }
+            customView.onRightClick = { [weak self] event in
+                self?.showStatusMenu(with: event)
             }
             statusBarView = customView
 
@@ -88,6 +84,38 @@ class MenuBarController: NSObject, NSPopoverDelegate {
 
         // Start background polling for status bar even when popover closed
         startPolling()
+    }
+
+    private func showStatusMenu(with event: NSEvent) {
+        guard let statusBarView else { return }
+
+        let menu = NSMenu()
+        let logoutItem = NSMenuItem(title: "Logout", action: #selector(logoutFromStatusMenu), keyEquivalent: "")
+        logoutItem.target = self
+        logoutItem.isEnabled = auth.isAuthenticated
+        menu.addItem(logoutItem)
+        menu.addItem(.separator())
+
+        let quitItem = NSMenuItem(title: "Quit SpotyPopup", action: #selector(quitFromStatusMenu), keyEquivalent: "")
+        quitItem.target = self
+        menu.addItem(quitItem)
+
+        if isPopoverOpen {
+            closePopover()
+        }
+
+        NSMenu.popUpContextMenu(menu, with: event, for: statusBarView)
+    }
+
+    @objc private func logoutFromStatusMenu() {
+        auth.logout()
+        if isPopoverOpen {
+            closePopover()
+        }
+    }
+
+    @objc private func quitFromStatusMenu() {
+        NSApplication.shared.terminate(nil)
     }
 
     private func updateStatusItemView() {
@@ -151,10 +179,7 @@ class MenuBarController: NSObject, NSPopoverDelegate {
     private func refreshPopoverContent() {
         let menuView = MenuView(
             api: api,
-            auth: auth,
-            onClose: {
-                NSApplication.shared.terminate(nil)
-            }
+            auth: auth
         )
         let viewController = NSViewController()
         viewController.view = menuView

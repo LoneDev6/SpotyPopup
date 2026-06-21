@@ -93,6 +93,7 @@ class SpotifyAPI: ObservableObject {
     }
 
     func play() async {
+        await prepareDeviceForPlay()
         await sendPlayerCommand(endpoint: "play", method: "PUT")
     }
 
@@ -428,6 +429,99 @@ class SpotifyAPI: ObservableObject {
             }
         } catch {
             AppLogger.error("Failed to fetch devices: \(error)", category: AppLogger.api)
+        }
+    }
+
+    func prepareDeviceForPlay() async {
+        let playbackWasMissing = currentPlayback == nil
+        await fetchAvailableDevices()
+
+        if let spotifydPath = spotifydExecutablePath() {
+            if let spotifydDevice = spotifydDevice() {
+                await activateDeviceIfNeeded(spotifydDevice)
+                return
+            }
+
+            launchSpotifyd(at: spotifydPath)
+            if let spotifydDevice = await waitForSpotifydDevice() {
+                await transferPlayback(to: spotifydDevice.id)
+                return
+            }
+
+            AppLogger.error("spotifyd installed but no Spotify device appeared", category: AppLogger.playback)
+            return
+        }
+
+        if playbackWasMissing, let firstDevice = availableDevices.first {
+            await activateDeviceIfNeeded(firstDevice)
+        }
+    }
+
+    private func activateDeviceIfNeeded(_ device: Device) async {
+        if device.isActive {
+            await fetchCurrentPlayback()
+        } else {
+            await transferPlayback(to: device.id)
+        }
+    }
+
+    private func spotifydDevice() -> Device? {
+        availableDevices.first { device in
+            device.name.lowercased().contains("spotifyd")
+        }
+    }
+
+    private func waitForSpotifydDevice() async -> Device? {
+        for _ in 0..<8 {
+            try? await Task.sleep(nanoseconds: 750_000_000)
+            await fetchAvailableDevices()
+            if let device = spotifydDevice() {
+                return device
+            }
+        }
+
+        return nil
+    }
+
+    private func spotifydExecutablePath() -> String? {
+        let process = Process()
+        let output = Pipe()
+
+        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        process.arguments = ["-lc", "command -v spotifyd"]
+        process.standardOutput = output
+        process.standardError = Pipe()
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            AppLogger.error("Failed check spotifyd: \(error)", category: AppLogger.playback)
+            return nil
+        }
+
+        guard process.terminationStatus == 0 else { return nil }
+
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        let path = String(data: data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return path?.isEmpty == false ? path : nil
+    }
+
+    private func launchSpotifyd(at path: String) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: path)
+
+        if let nullDevice = FileHandle(forWritingAtPath: "/dev/null") {
+            process.standardOutput = nullDevice
+            process.standardError = nullDevice
+        }
+
+        do {
+            try process.run()
+        } catch {
+            AppLogger.error("Failed launch spotifyd: \(error)", category: AppLogger.playback)
         }
     }
 

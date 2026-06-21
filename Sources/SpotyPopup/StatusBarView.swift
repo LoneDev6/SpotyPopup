@@ -11,8 +11,9 @@ class StatusBarView: NSView {
     private var singleWidth: CGFloat = 0
     private var isHovering: Bool = false
     private var trackingArea: NSTrackingArea?
-
+    
     var onClick: (() -> Void)?
+    var onRightClick: ((NSEvent) -> Void)?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -153,6 +154,10 @@ class StatusBarView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         onClick?()
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        onRightClick?(event)
     }
 
     override func viewDidMoveToWindow() {
