@@ -1,6 +1,7 @@
 import AppKit
 
 class QueueView: NSView {
+    private let backgroundEffectView = NSVisualEffectView()
     private let headerLabel = NSTextField(labelWithString: "Queue")
     private let closeButton = NSButton()
     private let nowPlayingLabel = NSTextField(labelWithString: "Now Playing")
@@ -28,8 +29,13 @@ class QueueView: NSView {
 
     private func setupViews() {
         wantsLayer = true
-        layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        layer?.backgroundColor = NSColor.clear.cgColor
 
+        backgroundEffectView.material = .hudWindow
+        backgroundEffectView.blendingMode = .behindWindow
+        backgroundEffectView.state = .active
+        addSubview(backgroundEffectView)
+        
         // Header label
         headerLabel.font = NSFont.boldSystemFont(ofSize: 18)
         headerLabel.textColor = .labelColor
@@ -87,7 +93,8 @@ class QueueView: NSView {
 
     override func layout() {
         super.layout()
-
+        backgroundEffectView.frame = bounds
+        
         // Header
         closeButton.frame = NSRect(x: bounds.width - 40, y: bounds.height - 40, width: 24, height: 24)
         headerLabel.sizeToFit()
@@ -233,7 +240,8 @@ class QueueTrackRow: NSView {
 
     private func setupViews() {
         wantsLayer = true
-
+        layer?.cornerRadius = 6
+        
         // Album art
         albumArtView.imageScaling = .scaleProportionallyUpOrDown
         albumArtView.wantsLayer = true
@@ -299,7 +307,7 @@ class QueueTrackRow: NSView {
         durationLabel.stringValue = track.durationFormatted
 
         if isPlaying {
-            layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.1).cgColor
+            layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.12).cgColor
         } else {
             layer?.backgroundColor = NSColor.clear.cgColor
         }

@@ -3,6 +3,7 @@ import AppKit
 class MenuView: NSView {
     private let api: SpotifyAPI
     private let auth: SpotifyAuth
+    private let backgroundEffectView = NSVisualEffectView()
 
     // Login view
     private let loginView = NSView()
@@ -68,8 +69,14 @@ class MenuView: NSView {
 
     private func setupViews() {
         wantsLayer = true
-        layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        layer?.cornerRadius = 8
+        layer?.backgroundColor = NSColor.clear.cgColor
 
+        backgroundEffectView.material = .hudWindow
+        backgroundEffectView.blendingMode = .behindWindow
+        backgroundEffectView.state = .active
+        addSubview(backgroundEffectView)
+        
         setupLoginView()
         setupHeaderBar()
         setupPlaybackView()
@@ -136,7 +143,7 @@ class MenuView: NSView {
 
     private func setupHeaderBar() {
         headerBar.wantsLayer = true
-        headerBar.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        headerBar.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.06).cgColor
 
         deviceButton.image = NSImage(systemSymbolName: "hifispeaker.fill", accessibilityDescription: nil)
         deviceButton.bezelStyle = .recessed
@@ -280,7 +287,8 @@ class MenuView: NSView {
 
     override func layout() {
         super.layout()
-
+        backgroundEffectView.frame = bounds
+        
         // Login view
         if !loginView.isHidden {
             loginView.frame = bounds
@@ -624,6 +632,7 @@ class MenuView: NSView {
 // MARK: - DevicesView
 
 class DevicesView: NSView {
+    private let backgroundEffectView = NSVisualEffectView()
     private let headerLabel = NSTextField(labelWithString: "Devices")
     private let refreshButton = NSButton()
     private let backButton = NSButton()
@@ -649,8 +658,13 @@ class DevicesView: NSView {
 
     private func setupViews() {
         wantsLayer = true
-        layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        layer?.backgroundColor = NSColor.clear.cgColor
 
+        backgroundEffectView.material = .hudWindow
+        backgroundEffectView.blendingMode = .behindWindow
+        backgroundEffectView.state = .active
+        addSubview(backgroundEffectView)
+        
         headerLabel.font = NSFont.systemFont(ofSize: 16, weight: .semibold)
         headerLabel.alignment = .center
         addSubview(headerLabel)
@@ -700,7 +714,8 @@ class DevicesView: NSView {
 
     override func layout() {
         super.layout()
-
+        backgroundEffectView.frame = bounds
+        
         headerLabel.frame = NSRect(x: 40, y: bounds.height - 40, width: bounds.width - 80, height: 24)
         refreshButton.frame = NSRect(x: bounds.width - 36, y: bounds.height - 38, width: 20, height: 20)
 
@@ -783,7 +798,8 @@ class DeviceRow: NSView {
 
     private func setupViews() {
         wantsLayer = true
-
+        layer?.cornerRadius = 6
+        
         button.title = ""
         button.bezelStyle = .recessed
         button.isBordered = false
@@ -833,7 +849,10 @@ class DeviceRow: NSView {
 
         iconView.image = NSImage(systemSymbolName: deviceIcon(for: device.type), accessibilityDescription: nil)
         iconView.contentTintColor = device.isActive ? .systemGreen : .secondaryLabelColor
-
+        layer?.backgroundColor = device.isActive
+            ? NSColor.systemGreen.withAlphaComponent(0.12).cgColor
+            : NSColor.clear.cgColor
+        
         activeIconView.isHidden = !device.isActive
 
         needsLayout = true

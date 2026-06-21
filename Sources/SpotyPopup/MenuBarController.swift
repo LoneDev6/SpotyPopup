@@ -201,6 +201,10 @@ class MenuBarController: NSObject, NSPopoverDelegate {
         refreshPopoverContent()
         print("🔍 Showing popover")
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        if let window = popover.contentViewController?.view.window {
+            window.isOpaque = false
+            window.backgroundColor = .clear
+        }
         isPopoverOpen = true
         print("🔍 Starting polling")
         startPolling()
