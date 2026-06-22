@@ -18,6 +18,10 @@ class SpotifyAPI: ObservableObject {
     private var accessToken: String?
     var currentPlaylistId: String?
     private var nextTracksURL: String?
+    private let spotifydLaunchLock = DispatchQueue(label: "SpotyPopup.spotifyd.launch")
+    private let spotifydLaunchCooldown: TimeInterval = 30
+    private var spotifydLaunchInProgress = false
+    private var lastSpotifydLaunchAt: Date?
     weak var authHandler: SpotifyAuth?
 
     func setAccessToken(_ token: String) {
@@ -494,6 +498,15 @@ class SpotifyAPI: ObservableObject {
                 return
             }
 
+            if isSpotifydProcessRunning() {
+                if let spotifydDevice = await waitForSpotifydDevice() {
+                    await transferPlayback(to: spotifydDevice.id)
+                    return
+                }
+                AppLogger.error("spotifyd process is running but no Spotify device appeared", category: AppLogger.playback)
+                return
+            }
+
             launchSpotifyd(at: spotifydPath)
             if let spotifydDevice = await waitForSpotifydDevice() {
                 await transferPlayback(to: spotifydDevice.id)
@@ -568,7 +581,58 @@ class SpotifyAPI: ObservableObject {
         return path?.isEmpty == false ? path : nil
     }
 
+    private func isSpotifydProcessRunning() -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+        process.arguments = ["-x", "spotifyd"]
+        process.standardOutput = Pipe()
+        process.standardError = Pipe()
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+            return process.terminationStatus == 0
+        } catch {
+            AppLogger.error("Failed check running spotifyd: \(error)", category: AppLogger.playback)
+            return false
+        }
+    }
+
+    private func reserveSpotifydLaunch() -> Bool {
+        spotifydLaunchLock.sync {
+            if spotifydLaunchInProgress {
+                return false
+            }
+
+            if let lastSpotifydLaunchAt,
+               Date().timeIntervalSince(lastSpotifydLaunchAt) < spotifydLaunchCooldown {
+                return false
+            }
+
+            spotifydLaunchInProgress = true
+            lastSpotifydLaunchAt = Date()
+            return true
+        }
+    }
+
+    private func finishSpotifydLaunch() {
+        spotifydLaunchLock.sync {
+            spotifydLaunchInProgress = false
+        }
+    }
+
     private func launchSpotifyd(at path: String) {
+        guard !isSpotifydProcessRunning() else {
+            AppLogger.info("spotifyd already running, skip launch", category: AppLogger.playback)
+            return
+        }
+
+        guard reserveSpotifydLaunch() else {
+            AppLogger.info("spotifyd launch skipped by cooldown", category: AppLogger.playback)
+            return
+        }
+        defer { finishSpotifydLaunch() }
+
         let process = Process()
         process.executableURL = URL(fileURLWithPath: path)
 
